@@ -1054,6 +1054,7 @@ export class Blockchain extends Plugin {
       if (await this.call('terminal', 'isPanelHidden')) this.call('terminal', 'togglePanel')
       this._triggerEvent(eventName, [null, tx.from, tx.to, tx.data, tx.useCall, result, timestamp, payLoad])
 
+      console.log(result, tx, args)
       try {
         const isEnabled = await this.call('settings', 'get', 'settings/ai-feedback')
         const creditThreshold = await this.call('settings', 'get', 'settings/ai-feedback-credit-threshold')
