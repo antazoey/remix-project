@@ -67,6 +67,13 @@ export function classifyApiError(error: any): ApiErrorClassification {
     return { type: DeepAgentErrorType.TOOL_EXECUTION_FAILED, retryable: false }
   }
 
+  // The backend's content filter. Terminal by definition — retrying or
+  // degrading to another model sends the same prompt and gets the same answer.
+  if (message.includes('prohibited_content') || message.includes('content_policy') ||
+      message.includes('content filter')) {
+    return { type: DeepAgentErrorType.CONTENT_BLOCKED, retryable: false }
+  }
+
   // `message` is lower-cased above, so every needle here must be too —
   // testing for 'ETIMEDOUT' against a lower-cased string never matched, which
   // silently downgraded every socket-level failure to UNKNOWN (non-retryable).
@@ -76,9 +83,14 @@ export function classifyApiError(error: any): ApiErrorClassification {
     return { type: DeepAgentErrorType.REQUEST_TIMEOUT, retryable: true, retryAfter: 5 }
   }
 
+  // 'connection error' is what the OpenAI / Anthropic SDKs throw when the
+  // underlying fetch fails. It matched none of the needles below, so a plain
+  // dropped connection classified as UNKNOWN and was never retried.
   if (message.includes('network') || message.includes('fetch') || message.includes('econnrefused') ||
       message.includes('enotfound') || message.includes('econnreset') || message.includes('epipe') ||
-      message.includes('socket') ||
+      message.includes('connection error') || message.includes('connection failed') ||
+      message.includes('connection refused') || message.includes('failed to fetch') ||
+      message.includes('load failed') || message.includes('socket') ||
       code === 'ECONNREFUSED' || code === 'ENOTFOUND' || code === 'ECONNRESET' || code === 'EPIPE') {
     return { type: DeepAgentErrorType.NETWORK_ERROR, retryable: true, retryAfter: 5 }
   }
@@ -159,6 +171,9 @@ export function getErrorMessage(errorType: DeepAgentErrorType, error: any, retry
 
   case DeepAgentErrorType.TOOL_EXECUTION_FAILED:
     return `Tool execution failed: ${error?.message || 'An error occurred while running a tool.'}`
+
+  case DeepAgentErrorType.CONTENT_BLOCKED:
+    return 'This request was blocked by the content policy. Rephrase it and try again.'
 
   case DeepAgentErrorType.REQUEST_TIMEOUT:
     return 'Request timed out. Please try again.'

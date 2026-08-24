@@ -2,7 +2,7 @@ import React, { Dispatch, useEffect, useLayoutEffect, useMemo, useRef, useState 
 import { SiOpenai, SiAnthropic, SiOllama, SiAmazonwebservices } from 'react-icons/si'
 import GroupListMenu, { LockedPillState } from './contextOptMenu'
 import { groupListType } from '../types/componentTypes'
-import { AIModel, modelKey, byokKeyState, type ByokKeyState } from '@remix/remix-ai-core'
+import { AIModel, modelKey, byokKeyState, isAutoModelId, type ByokKeyState } from '@remix/remix-ai-core'
 
 /**
  * Display metadata for each provider section header (label + subtitle). The
@@ -75,10 +75,9 @@ const providerIcon = (provider: string): React.ReactNode => {
 /** The anonymous sign-in placeholder is rendered ungrouped (like Auto Mode). */
 const isSignInModel = (model: AIModel) => model.id === '__signin__'
 
-const isAutoModel = (model: AIModel) => {
-  const id = model.id.toLowerCase()
-  return id === 'auto' || id === 'openrouter/auto' || id.endsWith('/auto')
-}
+/** Shared with the assistant's selection handler, which must route these rows
+ *  to Auto Mode rather than setting them as the active model. */
+const isAutoModel = (model: AIModel) => isAutoModelId(model.id)
 
 /** Map an AIModel to the row shape consumed by GroupListMenu. */
 const toRow = (model: AIModel, keyPresence: Partial<Record<AIModel['provider'], boolean>>): groupListType => {

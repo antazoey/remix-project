@@ -234,6 +234,21 @@ export function modelTransportProvider(model: Pick<AIModel, 'provider' | 'routeP
 }
 
 /**
+ * The catalogue's Auto Mode row, if the backend advertises one.
+ *
+ * `openrouter/auto` is a router pseudo-model, not something the proxy will
+ * serve: selecting it as a static model produces
+ * `403 Model 'openrouter/auto' is not available`. It means "let Auto Mode
+ * pick", so callers must route it to the Auto Mode path instead of setting it
+ * as the active model.
+ */
+export function isAutoModelId(id: string | undefined | null): boolean {
+  if (!id) return false
+  const normalized = id.toLowerCase()
+  return normalized === 'auto' || normalized === 'openrouter/auto' || normalized.endsWith('/auto')
+}
+
+/**
  * Whether a model is fit to write code — the gate for subagent work.
  *
  * Read from the backend's `capabilities` array, never from a client-side

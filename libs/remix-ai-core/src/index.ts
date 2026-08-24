@@ -20,7 +20,7 @@ import { IndexedDBChatHistoryBackend } from './storage/indexedDBBackend'
 import { WeightedToolSelector, IChatMessage } from './services/weightedToolSelector'
 import { remixAILogger, setRemixAILoggingEnabled, isRemixAILoggingEnabled } from './helpers/logger'
 import { generateStructured } from './helpers/structuredOutput'
-import { modelSupportsCodeGeneration } from './types/models'
+import { modelSupportsCodeGeneration, isAutoModelId } from './types/models'
 import { SecurityCheckSchema, GeneratedFileSchema, GeneratedProjectSchema, WorkspaceEditSchema } from './types/schemas'
 export {
   ChatCommandParser,
@@ -36,7 +36,7 @@ export {
   WeightedToolSelector, IChatMessage,
   remixAILogger, setRemixAILoggingEnabled, isRemixAILoggingEnabled,
   generateStructured, SecurityCheckSchema, GeneratedFileSchema, GeneratedProjectSchema, WorkspaceEditSchema,
-  modelSupportsCodeGeneration
+  modelSupportsCodeGeneration, isAutoModelId
 }
 
 export type { ByokKeyState } from './types/models'

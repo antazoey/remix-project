@@ -23,6 +23,7 @@ import {
 import { DeepAgentErrorType } from '../src/types/deepagent'
 import {
   AIModel,
+  isAutoModelId,
   modelSupportsCodeGeneration,
   parseAIModelsFromPermissions
 } from '../src/types/models'
@@ -242,5 +243,45 @@ tape('withRetryingFetch: an abort is never retried', async (t) => {
     t.equal(e.name, 'AbortError')
     t.equal(calls, 1, 'the user cancelled — do not call again')
   }
+  t.end()
+})
+
+tape('classifyApiError: socket-level failures are retryable network errors', (t) => {
+  // These needles were previously tested in upper case against a lower-cased
+  // message, so none of them ever matched and every one classified UNKNOWN.
+  for (const message of ['ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED', 'ENOTFOUND']) {
+    const { retryable } = classifyApiError({ message })
+    t.equal(retryable, true, `${message} is retryable`)
+  }
+  t.equal(classifyApiError({ code: 'ECONNRESET' }).type, DeepAgentErrorType.NETWORK_ERROR, 'by code too')
+  t.end()
+})
+
+tape('classifyApiError: the SDK "Connection error." is a retryable network error', (t) => {
+  // Seen repeatedly in production traces, previously classified UNKNOWN and
+  // therefore never retried.
+  const { type, retryable } = classifyApiError({ message: 'Connection error.' })
+  t.equal(type, DeepAgentErrorType.NETWORK_ERROR)
+  t.equal(retryable, true)
+  t.equal(classifyApiError({ message: 'Failed to fetch' }).retryable, true)
+  t.end()
+})
+
+tape('classifyApiError: a content-policy rejection is terminal, not unknown', (t) => {
+  const { type, retryable } = classifyApiError({ message: 'PROHIBITED_CONTENT' })
+  t.equal(type, DeepAgentErrorType.CONTENT_BLOCKED)
+  t.equal(retryable, false, 'the same prompt gets the same answer — never retry or degrade')
+  t.end()
+})
+
+tape('isAutoModelId: router pseudo-models are never a concrete selection', (t) => {
+  // Selecting one as a static model produced
+  // `403 Model 'openrouter/auto' is not available` on every request.
+  t.equal(isAutoModelId('openrouter/auto'), true)
+  t.equal(isAutoModelId('auto'), true)
+  t.equal(isAutoModelId('OpenRouter/Auto'), true, 'case-insensitive')
+  t.equal(isAutoModelId('anthropic/claude-sonnet-5'), false)
+  t.equal(isAutoModelId('gpt-auto-tuner'), false, 'only a trailing /auto segment counts')
+  t.equal(isAutoModelId(undefined), false)
   t.end()
 })

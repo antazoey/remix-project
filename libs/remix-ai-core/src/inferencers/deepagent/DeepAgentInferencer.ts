@@ -744,7 +744,23 @@ export class DeepAgentInferencer implements ICompletions, IGeneration {
             ? streamError
             : Object.assign(new Error(String(streamError?.message ?? streamError)), streamError)
         } else {
-          remixAILogger.warn('[DeepAgentInferencer] graph aborted with no recorded node error')
+          // No node error was recorded, so the cause is genuinely lost. A bare
+          // `Error("Abort")` in the trace tells nobody anything — attach what
+          // we do know (model, thread, how far the stream got) so these are
+          // triageable, and keep the original as `cause`.
+          const streamed = fullResponse.length
+          error = Object.assign(
+            new Error(
+              `The agent run stopped unexpectedly (model ${this.modelSelection.modelId}, ` +
+              `thread ${this.sessionThreadId}, ${streamed} chars streamed). No underlying error was reported.`
+            ),
+            { cause: caught, name: 'AgentAbortError' }
+          )
+          remixAILogger.warn('[DeepAgentInferencer] graph aborted with no recorded node error', {
+            model: this.modelSelection.modelId,
+            thread: this.sessionThreadId,
+            streamedChars: streamed
+          })
         }
       }
 

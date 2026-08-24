@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useRef, useImperativeHandle, M
 //@ts-ignore
 import '../css/remix-ai-assistant.css'
 
-import { ChatCommandParser, GenerationParams, ChatHistory, HandleStreamResponse, AIModel, ANONYMOUS_FALLBACK_MODELS, remixAILogger, modelKey, parseModelKey, findModel, applyByokKeyPolicy, BYOK_API_KEY_SETTINGS, modelTransportProvider, onApiKeysChange } from '@remix/remix-ai-core'
+import { ChatCommandParser, GenerationParams, ChatHistory, HandleStreamResponse, AIModel, ANONYMOUS_FALLBACK_MODELS, remixAILogger, modelKey, parseModelKey, findModel, applyByokKeyPolicy, BYOK_API_KEY_SETTINGS, modelTransportProvider, onApiKeysChange, isAutoModelId } from '@remix/remix-ai-core'
 import { ToolApprovalRequest, ApiKeyErrorEvent } from '@remix/remix-ai-core'
 import { HandleOpenAIResponse, HandleMistralAIResponse, HandleAnthropicResponse, HandleOllamaResponse } from '@remix/remix-ai-core'
 //@ts-ignore
@@ -2203,8 +2203,15 @@ export const RemixUiRemixAiAssistant = React.forwardRef<
   const handleModelSelection = useCallback(async (selectionKey: string) => {
     setChatNotice(null)
     const { id: modelId, provider: selectedProvider } = parseModelKey(selectionKey)
-    // Handle auto mode selection
-    if (selectionKey === 'auto') {
+    // Handle auto mode selection.
+    //
+    // When the backend advertises an Auto row in `ai_models` its key is
+    // `openrouter::openrouter/auto`, not the literal 'auto' — so matching only
+    // 'auto' sent the user down the static-model path and set
+    // `openrouter/auto` as the active model. That is a router pseudo-model the
+    // proxy will not serve, and every request then failed with
+    // `403 Model 'openrouter/auto' is not available`.
+    if (selectionKey === 'auto' || isAutoModelId(modelId)) {
       setAutoModeEnabled(true)
       try {
         await props.plugin.call('remixAI', 'setAutoMode', true)
