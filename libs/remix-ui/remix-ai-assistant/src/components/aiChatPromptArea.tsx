@@ -34,6 +34,10 @@ interface AiChatPromptAreaProps {
     buyCreditsPillState?: 'hidden' | 'coming_soon' | 'available'
     /** Called when the user clicks the "Buy credits" pill on a locked model. */
     onBuyCreditsClick?: (modelId: string, modelName: string) => void
+    /** Transport provider → whether the user stored a BYOK key for it. */
+    byokKeyPresence?: Record<string, boolean>
+    /** Opens the API key settings from a model waiting for a key. */
+    onAddApiKeyClick?: () => void
     input: string
     setInput: React.Dispatch<React.SetStateAction<string>>
     isStreaming: boolean
@@ -101,6 +105,8 @@ export default function AiChatPromptArea(props: AiChatPromptAreaProps) {
             upgradePillState={props.upgradePillState}
             buyCreditsPillState={props.buyCreditsPillState}
             onBuyCreditsClick={props.onBuyCreditsClick ? handleBuyCreditsClick : undefined}
+            byokKeyPresence={props.byokKeyPresence}
+            onAddApiKeyClick={props.onAddApiKeyClick ? () => props.onAddApiKeyClick?.() : undefined}
           />
           {false && props.mcpEnabled && (
             <div className="border-top mt-2 pt-2">

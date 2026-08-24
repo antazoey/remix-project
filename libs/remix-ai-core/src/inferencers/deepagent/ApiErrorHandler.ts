@@ -67,14 +67,19 @@ export function classifyApiError(error: any): ApiErrorClassification {
     return { type: DeepAgentErrorType.TOOL_EXECUTION_FAILED, retryable: false }
   }
 
-  if (message.includes('timeout') || message.includes('timed out') || message.includes('ETIMEDOUT') ||
-      message.includes('ESOCKETTIMEDOUT') || error?.code === 'ETIMEDOUT') {
+  // `message` is lower-cased above, so every needle here must be too —
+  // testing for 'ETIMEDOUT' against a lower-cased string never matched, which
+  // silently downgraded every socket-level failure to UNKNOWN (non-retryable).
+  const code = typeof error?.code === 'string' ? error.code.toUpperCase() : ''
+  if (message.includes('timeout') || message.includes('timed out') || message.includes('etimedout') ||
+      message.includes('esockettimedout') || code === 'ETIMEDOUT' || code === 'ESOCKETTIMEDOUT') {
     return { type: DeepAgentErrorType.REQUEST_TIMEOUT, retryable: true, retryAfter: 5 }
   }
 
-  if (message.includes('network') || message.includes('fetch') || message.includes('ECONNREFUSED') ||
-      message.includes('ENOTFOUND') || message.includes('ECONNRESET') || message.includes('socket') ||
-      error?.code === 'ECONNREFUSED' || error?.code === 'ENOTFOUND') {
+  if (message.includes('network') || message.includes('fetch') || message.includes('econnrefused') ||
+      message.includes('enotfound') || message.includes('econnreset') || message.includes('epipe') ||
+      message.includes('socket') ||
+      code === 'ECONNREFUSED' || code === 'ENOTFOUND' || code === 'ECONNRESET' || code === 'EPIPE') {
     return { type: DeepAgentErrorType.NETWORK_ERROR, retryable: true, retryAfter: 5 }
   }
 

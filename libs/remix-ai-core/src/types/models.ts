@@ -30,6 +30,24 @@ export interface AIModel {
   requireAPIKey?: boolean
   /** Backend ordering hint. */
   sortOrder: number
+
+  // ── Runtime parameters ────────────────────────────────────────────────
+  // The backend is the source of truth for how a model must be *driven*,
+  // exactly as it is for whether the model may be used at all. Every field
+  // below is optional: `resolveModelParams` falls back to a per-provider
+  // default when the backend hasn't advertised one, so an older payload
+  // keeps working. Never hardcode these per model id on the client.
+
+  /** Max output tokens this model accepts. Backend `max_output_tokens`. */
+  maxOutputTokens?: number
+  /** Total context window in tokens. Backend `context_window`. */
+  contextWindow?: number
+  /** Sampling temperature this model should run at. Backend `temperature`. */
+  temperature?: number
+  /** Nucleus sampling. Backend `top_p`. */
+  topP?: number
+  /** Model emits reasoning/thinking content. Backend `supports_reasoning`. */
+  supportsReasoning?: boolean
 }
 
 /** Backwards-compat alias — old code reads `model.name`. */
@@ -129,6 +147,15 @@ export function findModel(
  *     sort_order
  *   }
  */
+function finiteNumber(value: any): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function positiveNumber(value: any): number | undefined {
+  const n = finiteNumber(value)
+  return n !== undefined && n > 0 ? n : undefined
+}
+
 export function parseAIModelsFromPermissions(permissions: any): AIModel[] | null {
   const raw = permissions?.ai_models
   if (!Array.isArray(raw)) return null
@@ -147,7 +174,14 @@ export function parseAIModelsFromPermissions(permissions: any): AIModel[] | null
       available: m.available !== false,
       reason: typeof m.reason === 'string' ? m.reason : undefined,
       requireAPIKey: !!(m.require_api_key ?? m.requireAPIKey),
-      sortOrder: typeof m.sort_order === 'number' ? m.sort_order : 0
+      sortOrder: typeof m.sort_order === 'number' ? m.sort_order : 0,
+      maxOutputTokens: positiveNumber(m.max_output_tokens ?? m.maxOutputTokens),
+      contextWindow: positiveNumber(m.context_window ?? m.contextWindow),
+      temperature: finiteNumber(m.temperature),
+      topP: finiteNumber(m.top_p ?? m.topP),
+      supportsReasoning: typeof (m.supports_reasoning ?? m.supportsReasoning) === 'boolean'
+        ? !!(m.supports_reasoning ?? m.supportsReasoning)
+        : undefined
     }))
     .sort((a, b) => a.sortOrder - b.sortOrder)
 
@@ -171,16 +205,19 @@ export function isBedrockModel(model: Pick<AIModel, 'provider' | 'routeProvider'
 }
 
 /**
- * AWS Bedrock is BYOK-only — the Remix proxy no longer fronts it.
+ * AWS Bedrock is BYOK-only — the Remix proxy no longer fronts it. Without the
+ * user's bearer token its rows stay in the catalogue but go unavailable with
+ * `reason: 'api_key_required'`, so the picker can advertise Bedrock (and offer
+ * the "Add API key" hand-off) instead of hiding a provider the user could use.
  */
 export function applyBedrockByokPolicy(models: AIModel[], hasBedrockKey: boolean): AIModel[] {
   if (!Array.isArray(models)) return models
-  if (!hasBedrockKey) return models.filter((model) => !isBedrockModel(model))
-  return models.map((model) =>
-    isBedrockModel(model)
+  return models.map((model) => {
+    if (!isBedrockModel(model)) return model
+    return hasBedrockKey
       ? { ...model, available: true, requiredFeature: null, requireAPIKey: true, reason: undefined }
-      : model
-  )
+      : { ...model, available: false, requiredFeature: null, requireAPIKey: true, reason: 'api_key_required' }
+  })
 }
 
 /** Settings key holding the user's own OpenRouter API key. */
@@ -194,6 +231,23 @@ export const BYOK_API_KEY_SETTINGS: Partial<Record<AIModel['provider'], string>>
 /** The provider that actually carries the request (route wins over brand). */
 export function modelTransportProvider(model: Pick<AIModel, 'provider' | 'routeProvider'>): AIModel['provider'] {
   return model.routeProvider ?? model.provider
+}
+
+/**
+ * Whether a model is fit to write code — the gate for subagent work.
+ *
+ * Read from the backend's `capabilities` array, never from a client-side
+ * model-family list: those go stale the moment the catalogue moves, and a
+ * new weak model ships as suitable until someone notices.
+ *
+ * A row with NO advertised capabilities is treated as suitable. Older
+ * payloads send an empty array, and refusing every model there would break
+ * subagents outright — the strictly worse failure.
+ */
+export function modelSupportsCodeGeneration(model: Pick<AIModel, 'capabilities'> | undefined): boolean {
+  const caps = model?.capabilities
+  if (!Array.isArray(caps) || caps.length === 0) return true
+  return caps.includes('code')
 }
 
 /**
@@ -213,6 +267,26 @@ export function applyByokKeyPolicy(
     if (!model.requireAPIKey || keyPresence[provider]) return model
     return { ...model, available: false, reason: 'api_key_required' }
   })
+}
+
+/** Whether a row runs on the user's own key, or is waiting for one. */
+export type ByokKeyState = 'own-key' | 'needs-key'
+
+/**
+ * BYOK state of a single row, for display. A stored key is used for every row
+ * on that transport (ModelFactory switches to the direct API as soon as one
+ * exists), so key presence alone decides `own-key`. Rows the backend flagged
+ * `require_api_key` have no proxy route, hence `needs-key` without one; the
+ * rest keep running on the Remix proxy and get no badge at all.
+ */
+export function byokKeyState(
+  model: Pick<AIModel, 'provider' | 'routeProvider' | 'requireAPIKey'>,
+  keyPresence: Partial<Record<AIModel['provider'], boolean>>
+): ByokKeyState | undefined {
+  const provider = modelTransportProvider(model)
+  if (!BYOK_API_KEY_SETTINGS[provider]) return undefined
+  if (keyPresence[provider]) return 'own-key'
+  return model.requireAPIKey ? 'needs-key' : undefined
 }
 
 /**

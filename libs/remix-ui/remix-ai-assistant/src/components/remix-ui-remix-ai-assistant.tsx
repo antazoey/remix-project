@@ -193,6 +193,9 @@ export const RemixUiRemixAiAssistant = React.forwardRef<
   // Mirrors `selectedModel` for callbacks that must not capture a stale value
   // (the API-key change subscription lives outside the render closure).
   const selectedModelRef = useRef<AIModel | null>(null)
+  // Mirror of the stored BYOK keys, so the picker can mark which rows run on
+  // the user's key and which are waiting for one.
+  const [byokKeyPresence, setByokKeyPresence] = useState<Record<string, boolean>>({})
   const [autoModeEnabled, setAutoModeEnabled] = useState(false)
   const [usingOwnApiKey, setUsingOwnApiKey] = useState(false)
   const [apiKeyError, setApiKeyError] = useState<ApiKeyErrorEvent | null>(null)
@@ -525,7 +528,9 @@ export const RemixUiRemixAiAssistant = React.forwardRef<
     try {
       const models = await props.plugin.call('assistantState' as any, 'getAvailableModels')
       if (Array.isArray(models) && models.length > 0) {
-        const curated = applyByokKeyPolicy(models, await readByokKeyPresence())
+        const presence = await readByokKeyPresence()
+        setByokKeyPresence(presence)
+        const curated = applyByokKeyPolicy(models, presence)
         setAvailableModels(curated)
         await dropSelectionInvalidatedByKeys(curated)
       }
@@ -1063,7 +1068,9 @@ export const RemixUiRemixAiAssistant = React.forwardRef<
           // BYOK policy: Bedrock rows stay hidden until its bearer token is
           // stored, and key-only rows on the other providers go unavailable
           // when their key is deleted (kept in sync by onApiKeysChange above).
-          setAvailableModels(applyByokKeyPolicy(models, await readByokKeyPresence()))
+          const presence = await readByokKeyPresence()
+          setByokKeyPresence(presence)
+          setAvailableModels(applyByokKeyPolicy(models, presence))
         }
       } catch (e) { remixAILogger.warn('[remix-ai-assistant] getAvailableModels failed', e) }
     }
@@ -2969,6 +2976,8 @@ export const RemixUiRemixAiAssistant = React.forwardRef<
               handleLoadAuditChecklist={handleLoadAuditChecklist}
               handleGasOptimisationAudit={handleGasOptimisationAudit}
               usingOwnApiKey={usingOwnApiKey}
+              byokKeyPresence={byokKeyPresence}
+              onAddApiKeyClick={handleOpenSettings}
               aiRoute={aiRouteStatus.route}
               aiRouteReady={aiRouteStatus.ready}
               isAuthenticated={isAuthenticated}
@@ -3027,6 +3036,8 @@ export const RemixUiRemixAiAssistant = React.forwardRef<
               handleLoadAuditChecklist={handleLoadAuditChecklist}
               handleGasOptimisationAudit={handleGasOptimisationAudit}
               usingOwnApiKey={usingOwnApiKey}
+              byokKeyPresence={byokKeyPresence}
+              onAddApiKeyClick={handleOpenSettings}
               aiRoute={aiRouteStatus.route}
               aiRouteReady={aiRouteStatus.ready}
               isAuthenticated={isAuthenticated}

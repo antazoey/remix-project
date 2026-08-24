@@ -109,6 +109,14 @@ export class DeepAgentEventBridge {
       plugin.emit('onApiError', data)
     })
 
+    // Stream went quiet for longer than the inactivity window. This was listed
+    // in EVENTS (so it got torn down) but never subscribed, leaving the
+    // StreamEventHandler timer with nowhere to report.
+    eventEmitter.on('onInactivityTimeout', (data: { message: string; timestamp: number; threadId?: string }) => {
+      remixAILogger.warn('[Bridge] onInactivityTimeout', data?.message)
+      plugin.emit('onInactivityTimeout', data)
+    })
+
     // Human-in-the-loop: relay approval requests to UI
     eventEmitter.on('onToolApprovalRequired', (request: ToolApprovalRequest) => {
       remixAILogger.log('[Bridge] onToolApprovalRequired', request.toolName, request.requestId)

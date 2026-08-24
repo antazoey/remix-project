@@ -2,7 +2,7 @@ import React, { Dispatch, useEffect, useLayoutEffect, useMemo, useRef, useState 
 import { SiOpenai, SiAnthropic, SiOllama, SiAmazonwebservices } from 'react-icons/si'
 import GroupListMenu, { LockedPillState } from './contextOptMenu'
 import { groupListType } from '../types/componentTypes'
-import { AIModel, modelKey } from '@remix/remix-ai-core'
+import { AIModel, modelKey, byokKeyState, type ByokKeyState } from '@remix/remix-ai-core'
 
 /**
  * Display metadata for each provider section header (label + subtitle). The
@@ -81,7 +81,7 @@ const isAutoModel = (model: AIModel) => {
 }
 
 /** Map an AIModel to the row shape consumed by GroupListMenu. */
-const toRow = (model: AIModel): groupListType => {
+const toRow = (model: AIModel, keyPresence: Partial<Record<AIModel['provider'], boolean>>): groupListType => {
   const key = modelKey(model)
   return {
     label: model.displayName,
@@ -89,8 +89,22 @@ const toRow = (model: AIModel): groupListType => {
     icon: 'fa-solid fa-check',
     stateValue: key,
     dataId: `ai-model-${key.replace(/[^a-zA-Z0-9]/g, '-')}`,
-    isLocked: !model.available
+    isLocked: !model.available,
+    keyState: byokKeyState(model, keyPresence)
   }
+}
+
+/**
+ * BYOK state of a whole provider section: `own-key` as soon as one of its rows
+ * runs on the user's key, `needs-key` when the section is only waiting for one.
+ */
+const groupKeyState = (
+  models: AIModel[],
+  keyPresence: Partial<Record<AIModel['provider'], boolean>>
+): ByokKeyState | undefined => {
+  const states = models.map(model => byokKeyState(model, keyPresence))
+  if (states.some(state => state === 'own-key')) return 'own-key'
+  return states.some(state => state === 'needs-key') ? 'needs-key' : undefined
 }
 
 /** A provider never shows more than this many model rows before scrolling. */
@@ -154,6 +168,11 @@ export interface ModelSelectorMenuProps {
   upgradePillState?: LockedPillState
   buyCreditsPillState?: LockedPillState
   onBuyCreditsClick?: (item: groupListType) => void
+  /** Transport provider → whether the user has stored a key for it. Drives the
+   *  "Own key" / "Add API key" marks on rows and provider headers. */
+  byokKeyPresence?: Partial<Record<AIModel['provider'], boolean>>
+  /** Hand-off to the API key settings, from a row or header waiting for a key. */
+  onAddApiKeyClick?: (item: groupListType) => void
 }
 
 export default function ModelSelectorMenu(props: ModelSelectorMenuProps) {
@@ -230,8 +249,11 @@ export default function ModelSelectorMenu(props: ModelSelectorMenuProps) {
     onLockedItemClick: props.onLockedItemClick,
     upgradePillState: props.upgradePillState,
     buyCreditsPillState: props.buyCreditsPillState,
-    onBuyCreditsClick: props.onBuyCreditsClick
+    onBuyCreditsClick: props.onBuyCreditsClick,
+    onAddApiKeyClick: props.onAddApiKeyClick
   }
+
+  const keyPresence = props.byokKeyPresence ?? {}
 
   const autoValue = autoModel ? modelKey(autoModel) : 'auto'
   const showAutoRow = !!autoModel || props.autoModeAvailable
@@ -312,7 +334,7 @@ export default function ModelSelectorMenu(props: ModelSelectorMenuProps) {
 
         {/* Sign-in placeholder */}
         {signInModels.length > 0 && !normalizedQuery && (
-          <GroupListMenu {...groupListProps} groupList={signInModels.map(toRow)} />
+          <GroupListMenu {...groupListProps} groupList={signInModels.map(model => toRow(model, keyPresence))} />
         )}
 
         {normalizedQuery && !groups.some(g => g.models.some(matchesQuery)) && (
@@ -331,7 +353,13 @@ export default function ModelSelectorMenu(props: ModelSelectorMenuProps) {
           // When a provider owns the active model but is collapsed, surface that
           // model's name in the subtitle so the current choice is visible without
           // expanding.
-          const subtitle = ownsSelection && !isOpen && selectedModel ? selectedModel.displayName : meta.subtitle
+          const keyState = groupKeyState(group.models, keyPresence)
+          const keySubtitle = keyState === 'own-key'
+            ? 'Running on your API key'
+            : keyState === 'needs-key' ? 'Needs your API key' : null
+          const subtitle = ownsSelection && !isOpen && selectedModel
+            ? selectedModel.displayName
+            : (keySubtitle ?? meta.subtitle)
           return (
             <div key={group.provider} className="rai-provider-group" data-id={`ai-provider-group-${group.provider}`}>
               <button
@@ -355,12 +383,25 @@ export default function ModelSelectorMenu(props: ModelSelectorMenuProps) {
                   </span>
                 </span>
                 <span className="d-flex align-items-center">
+                  {keyState && (
+                    <span
+                      className={`me-2 ${keyState === 'own-key' ? 'text-success' : 'text-primary'}`}
+                      data-id={`ai-provider-key-${group.provider}`}
+                      data-key-state={keyState}
+                      title={keyState === 'own-key'
+                        ? `${meta.label} runs on your own API key`
+                        : `${meta.label} needs your own API key`}
+                      style={{ fontSize: '0.7rem' }}
+                    >
+                      <i className="fas fa-key"></i>
+                    </span>
+                  )}
                   <span className="badge bg-secondary me-2" style={{ fontSize: '0.6rem' }}>{filtered.length}</span>
                   <i className={`fa-solid ${isOpen ? 'fa-chevron-down' : 'fa-chevron-right'} text-muted`} style={{ fontSize: '0.7rem' }}></i>
                 </span>
               </button>
               {isOpen && (
-                <ProviderModelList rows={filtered.map(toRow)} groupListProps={groupListProps} />
+                <ProviderModelList rows={filtered.map(model => toRow(model, keyPresence))} groupListProps={groupListProps} />
               )}
             </div>
           )

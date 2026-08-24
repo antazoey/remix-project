@@ -9,7 +9,8 @@ import { remixAILogger,
   modelSupportsTools,
   getModelById,
   findModel,
-  ANONYMOUS_FALLBACK_MODELS
+  ANONYMOUS_FALLBACK_MODELS,
+  setModelCatalog
 } from '@remix/remix-ai-core'
 import type { AIModel } from '@remix/remix-ai-core'
 import type { IRemixAIPlugin } from './types'
@@ -34,6 +35,9 @@ export class ModelManager {
     try {
       const dynamic: AIModel[] = await plugin.call('assistantState', 'getAvailableModels')
       if (Array.isArray(dynamic)) {
+        // Mirror the catalogue so ModelFactory can read each model's token
+        // budget / temperature instead of falling back to provider defaults.
+        setModelCatalog(dynamic)
         model = findModel(dynamic, modelId, provider)
       }
     } catch (e) {

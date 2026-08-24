@@ -22,6 +22,7 @@ import {
 } from '../types/mcpTools';
 import { Plugin } from '@remixproject/engine';
 import { getContractData } from '@remix-project/core-plugin'
+import { remixAILogger } from '../../helpers/logger'
 import type { TxResult } from '@remix-project/remix-lib';
 import { BrowserProvider, formatEther } from "ethers"
 import { toNumber } from 'ethers'
@@ -34,23 +35,23 @@ const { txFormat, txHelper: { makeFullTypeDefinition } } = execution;
  */
 export class DeployContractHandler extends BaseToolHandler {
   name = 'deploy_contract';
-  description = '';
+  description = 'Deploy a compiled contract to the selected environment. Compile the file first — deployment reads the latest compilation result.';
   inputSchema = {
     type: 'object',
     properties: {
       contractName: {
         type: 'string',
-        description: ''
+        description: 'Name of the contract to deploy (the contract name, not the file name), as it appears in the compilation result'
       },
       constructorArgs: {
         type: 'array',
-        description: '',
+        description: 'Constructor arguments in declaration order. Empty when the constructor takes none.',
         items: {},
         default: []
       },
       gasLimit: {
         type: 'number',
-        description: '',
+        description: 'Gas limit for the deployment transaction. Omit to use the value set in Deploy & Run.',
         minimum: 21000
       },
       gasPrice: {
@@ -64,7 +65,7 @@ export class DeployContractHandler extends BaseToolHandler {
       },
       account: {
         type: 'string',
-        description: 'address or index'
+        description: 'Sender address to deploy from. Omit to use the account currently selected in Deploy & Run.'
       },
     },
     required: ['contractName']
@@ -99,9 +100,33 @@ export class DeployContractHandler extends BaseToolHandler {
       // Get compilation result to find contract
       const compilerArtefact = await plugin.call('compilerArtefacts', 'getCompilerAbstractByContractName', args.contractName) as CompilerAbstract;
       if (!compilerArtefact) {
-        return this.createErrorResult(`Could not retrieve contract data for '${args.contractName}'`);
+        return this.createErrorResult(
+          `No compilation result for '${args.contractName}'. Compile the file that defines it first (compile_solidity), then deploy. ` +
+          'Note that contractName is the contract name, not the file name.'
+        );
       }
-      const data = getContractData(args.contractName, compilerArtefact)
+      // getContractData dereferences the lookup result unguarded, so a name
+      // that is not in this artefact used to surface as a TypeError.
+      let data: ReturnType<typeof getContractData>
+      try {
+        data = getContractData(args.contractName, compilerArtefact)
+      } catch {
+        data = null
+      }
+      if (!data) {
+        return this.createErrorResult(`'${args.contractName}' was not found in the latest compilation. Compile it first, then deploy.`);
+      }
+
+      // Honour the requested sender — it was accepted in the schema and then
+      // ignored, so deployments silently went out from the selected account.
+      if (args.account) {
+        try {
+          await plugin.call('udapp' as any, 'setAccount', args.account)
+        } catch (e) {
+          return this.createErrorResult(`Could not select account '${args.account}': ${(e as any)?.message || e}`)
+        }
+      }
+
       await plugin.call('sidePanel', 'showContent', 'udapp' )
       plugin.emit('setValueRequest', args.value || '0', 'wei')
       if (args.value && args.value !== '0') {
@@ -115,23 +140,38 @@ export class DeployContractHandler extends BaseToolHandler {
           data,
           args.constructorArgs ? args.constructorArgs : [],
           null,
-          compilerArtefact.getData().contracts
+          // blockchain reads `compilerContracts?.data?.contracts`, so this must
+          // be the CompilerAbstract itself (same value the Deploy & Run panel
+          // passes). Handing it the already-drilled `.getData().contracts` left
+          // library linking with no compilation data, so every contract that
+          // links a library failed with 'Cannot find compilation data of library'.
+          compilerArtefact
         )
       } catch (e) {
         return this.createErrorResult(`Deployment error: ${e.message || e}`)
       }
 
-      const receipt = (txReturn.txResult.receipt)
+      const receipt = txReturn?.txResult?.receipt
+      if (!receipt) {
+        return this.createErrorResult('Deployment returned no transaction receipt — the transaction may not have been sent.')
+      }
       const result: DeploymentResult = {
         transactionHash: receipt.hash,
         gasUsed: toNumber(receipt.gasUsed),
         effectiveGasPrice: args.gasPrice || '20000000000',
         blockNumber: toNumber(receipt.blockNumber),
         logs: receipt.logs,
-        contractAddress: receipt.contractAddress,
+        contractAddress: receipt.contractAddress || txReturn.address,
         success: receipt.status === 1 ? true : false
       }
-      plugin.call('udappDeployedContracts', 'addInstance', result.contractAddress, data.abi, args.contractName, data)
+      // Registering the instance in the UI must not turn a successful
+      // deployment into a failed tool call (it also used to float an
+      // unhandled rejection when the panel was not active).
+      try {
+        await plugin.call('udappDeployedContracts', 'addInstance', result.contractAddress, data.abi, args.contractName, data)
+      } catch (e) {
+        remixAILogger.warn('[DeployContractHandler] addInstance failed after a successful deployment', e)
+      }
 
       return this.createSuccessResult(result);
 
