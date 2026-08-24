@@ -10,6 +10,7 @@ import {
   resolveDegradeSelection
 } from '../src/inferencers/deepagent/helpers/modelCatalog'
 import { resolveBedrockModelId, geoForRegion, ensureToolDescriptions } from '../src/inferencers/deepagent/providers/bedrock'
+import { SUPPORTED_TRANSPORTS, isSupportedTransport, getProviderAdapter } from '../src/inferencers/deepagent/providers'
 import { AIModel } from '../src/types/models'
 
 function row(partial: Partial<AIModel>): AIModel {
@@ -69,13 +70,13 @@ tape('resolveCodeCapableSelection: the backend task assignment wins', async (t) 
 
 tape('resolveCodeCapableSelection: prefers a candidate on the same transport', async (t) => {
   const plugin = mockPlugin([
-    row({ id: 'weak', capabilities: ['chat'], provider: 'openai' }),
-    row({ id: 'elsewhere', provider: 'anthropic' }),
-    row({ id: 'same-route', provider: 'anthropic', routeProvider: 'openai' })
+    row({ id: 'weak', capabilities: ['chat'], provider: 'bedrock' }),
+    row({ id: 'elsewhere', provider: 'anthropic', routeProvider: 'openrouter' }),
+    row({ id: 'same-route', provider: 'anthropic', routeProvider: 'bedrock' })
   ])
-  const result = await resolveCodeCapableSelection(plugin, { provider: 'openai', modelId: 'weak' })
+  const result = await resolveCodeCapableSelection(plugin, { provider: 'bedrock', modelId: 'weak' })
   t.equal(result?.modelId, 'same-route', 'keeps the request path unchanged')
-  t.equal(result?.routeProvider, 'openai')
+  t.equal(result?.routeProvider, 'bedrock')
   t.end()
 })
 
@@ -163,5 +164,21 @@ tape('ensureToolDescriptions: backfills the empty descriptions Bedrock rejects',
   t.equal(out[1].description, 'List files.', 'a real description is left alone')
   t.equal(out[2].function.description, 'The task tool.')
   t.equal(out[3], null, 'non-objects pass through')
+  t.end()
+})
+
+tape('provider registry: exactly three transports, and brands are refused', (t) => {
+  t.deepEqual([...SUPPORTED_TRANSPORTS].sort(), ['bedrock', 'ollama', 'openrouter'])
+  for (const transport of SUPPORTED_TRANSPORTS) {
+    t.equal(getProviderAdapter(transport).id, transport, `${transport} resolves to its own adapter`)
+  }
+
+  // The old registry defaulted anything unrecognised to an Anthropic adapter,
+  // so a row with a stale transport quietly built a client for the wrong
+  // provider and failed later with an unrelated message.
+  for (const brand of ['anthropic', 'openai', 'mistralai', 'moonshot', undefined]) {
+    t.throws(() => getProviderAdapter(brand as any), /is not a transport/, `${brand} is rejected by name`)
+    t.equal(isSupportedTransport(brand as any), false)
+  }
   t.end()
 })

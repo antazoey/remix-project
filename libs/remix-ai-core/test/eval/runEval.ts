@@ -105,11 +105,14 @@ async function runModel(selection: ModelSelection): Promise<ModelResult> {
   return { label, results }
 }
 
-/** `anthropic/claude-sonnet-5` → an OpenRouter-routed selection. */
+/**
+ * `anthropic/claude-sonnet-5` → an OpenRouter-routed selection. The vendor
+ * prefix is the display brand; OpenRouter is always the transport here.
+ */
 function parseArg(arg: string): ModelSelection {
-  const [maybeProvider] = arg.split('/')
+  const [vendor] = arg.split('/')
   return {
-    provider: (arg.includes('/') ? maybeProvider : 'anthropic') as ModelSelection['provider'],
+    provider: (arg.includes('/') ? vendor : 'openrouter') as ModelSelection['provider'],
     modelId: arg,
     routeProvider: 'openrouter'
   }

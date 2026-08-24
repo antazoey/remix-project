@@ -7,13 +7,6 @@ import { ProviderAdapter } from './types'
 
 export const DEFAULT_BEDROCK_REGION = 'us-east-1'
 
-/**
- * Bedrock's Converse API rejects any tool whose `toolSpec.description` is
- * empty ("Member must have length greater than or equal to 1"), unlike every
- * other provider. The deepagents runtime binds several built-in tools
- * (todo / task / filesystem) whose descriptions can be empty, so backfill a
- * non-empty description before the request is validated.
- */
 export function ensureToolDescriptions<T>(tools: T[]): T[] {
   if (!Array.isArray(tools)) return tools
   const fallback = (name?: unknown) =>
@@ -44,13 +37,6 @@ export function geoForRegion(region: string): string {
   return 'us'
 }
 
-/**
- * Normalise a Bedrock model id for the caller's region.
- *
- * Newer Anthropic / Meta models on Bedrock are only reachable through a
- * cross-region inference profile (e.g. `us.anthropic.claude-haiku-4-5-…`),
- * whose geo prefix must match the region the request is signed for.
- */
 export function resolveBedrockModelId(modelId: string, region: string): string {
   const m = modelId.match(/^(us-gov|us|eu|apac)\.(.+)$/)
   if (!m) return modelId

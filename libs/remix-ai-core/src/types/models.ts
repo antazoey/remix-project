@@ -1,5 +1,6 @@
 import { IParams } from './types';
 import { Features } from '@remix-api';
+import { ModelProvider, ModelTransport } from './deepagent';
 
 /**
  * Model registry entry.
@@ -11,8 +12,14 @@ import { Features } from '@remix-api';
  */
 export interface AIModel {
   id: string
-  provider: 'openai' | 'mistralai' | 'moonshot' | 'openrouter' | 'anthropic' | 'ollama' | 'bedrock'
-  routeProvider?: 'openai' | 'mistralai' | 'moonshot' | 'openrouter' | 'anthropic' | 'ollama' | 'bedrock'
+  /** Display brand — what the picker groups under. Not how we reach the model. */
+  provider: ModelProvider
+  /**
+   * The transport that carries the request. Only the three real transports
+   * are valid here; a vendor brand reaching us as a route is a backend bug,
+   * and `getProviderAdapter` rejects it by name rather than guessing.
+   */
+  routeProvider?: ModelTransport
   /** Display name as the backend wants it shown. */
   displayName: string
   description: string
@@ -223,12 +230,19 @@ export function applyBedrockByokPolicy(models: AIModel[], hasBedrockKey: boolean
 /** Settings key holding the user's own OpenRouter API key. */
 export const OPENROUTER_API_KEY_SETTING = 'deepagent-openrouter-api-key'
 
-export const BYOK_API_KEY_SETTINGS: Partial<Record<AIModel['provider'], string>> = {
+/** Keyed by transport: only Bedrock and OpenRouter can run on a user key. */
+export const BYOK_API_KEY_SETTINGS: Partial<Record<ModelTransport, string>> = {
   bedrock: BEDROCK_API_KEY_SETTING,
   openrouter: OPENROUTER_API_KEY_SETTING
 }
 
-/** The provider that actually carries the request (route wins over brand). */
+/**
+ * The transport that actually carries the request (route wins over brand).
+ *
+ * The return type stays the brand union because a row whose backend payload
+ * omits `routeProvider` yields its brand here; `getProviderAdapter` rejects
+ * that explicitly rather than guessing a transport for it.
+ */
 export function modelTransportProvider(model: Pick<AIModel, 'provider' | 'routeProvider'>): AIModel['provider'] {
   return model.routeProvider ?? model.provider
 }

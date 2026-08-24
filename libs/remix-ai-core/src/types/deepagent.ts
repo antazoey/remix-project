@@ -1,9 +1,24 @@
-export type ModelProvider = 'anthropic' | 'mistralai' | 'openai' | 'moonshot' | 'openrouter' | 'ollama' | 'bedrock'
+/**
+ * The transports that actually carry a request. Exactly three: OpenRouter
+ * routes every hosted model, Bedrock is BYOK-direct, Ollama is local.
+ */
+export type ModelTransport = 'openrouter' | 'bedrock' | 'ollama'
+
+/**
+ * The brand a model is displayed under. A superset of `ModelTransport`: the
+ * vendor brands below reach us through OpenRouter and exist only so the picker
+ * can group by vendor rather than showing one enormous OpenRouter section.
+ * Never switch on this to decide how to talk to a model — use
+ * `modelTransportProvider()` and `ModelTransport` for that.
+ */
+export type ModelProvider = 'anthropic' | 'mistralai' | 'openai' | 'moonshot' | ModelTransport
 
 export interface ModelSelection {
+  /** Display brand. */
   provider: ModelProvider
   modelId: string
-  routeProvider?: ModelProvider
+  /** The transport that carries the request; wins over `provider`. */
+  routeProvider?: ModelTransport
 }
 
 /**

@@ -40,7 +40,6 @@ export {
   MAX_TOOL_EXECUTIONS,
 
   // Model configuration
-  SUPPORTED_PROVIDERS,
 
   // Session configuration
   SESSION_THREAD_PREFIX,
@@ -70,7 +69,6 @@ export {
   LOCAL_STORAGE_KEYS,
 
   // Types
-  type SupportedProvider,
   type MemoryBackendType
 } from './constants'
 
@@ -114,6 +112,8 @@ export {
 // Provider adapter registry.
 export {
   PROVIDER_ADAPTERS,
+  SUPPORTED_TRANSPORTS,
+  isSupportedTransport,
   getProviderAdapter,
   getProviderCapabilities,
   resolveBedrockModelId,

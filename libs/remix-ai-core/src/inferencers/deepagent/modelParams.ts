@@ -1,5 +1,5 @@
 import { AIModel, findModel, modelTransportProvider } from '../../types/models'
-import { ModelProvider, ModelSelection } from '../../types/deepagent'
+import { ModelTransport, ModelSelection } from '../../types/deepagent'
 import { remixAILogger } from '../../helpers/logger'
 
 /**
@@ -29,27 +29,12 @@ export interface ResolvedModelParams {
  *
  * These are provider-level, not model-level — no model ids on the client.
  */
-export const PROVIDER_PARAM_DEFAULTS: Record<ModelProvider, ResolvedModelParams> = {
-  anthropic: { maxOutputTokens: 32768, temperature: 0.7 },
-  openai: { maxOutputTokens: 32768, temperature: 0.7 },
+export const PROVIDER_PARAM_DEFAULTS: Record<ModelTransport, ResolvedModelParams> = {
   openrouter: { maxOutputTokens: 32768, temperature: 0.7 },
-  mistralai: { maxOutputTokens: 16384, temperature: 0.7 },
-  // Moonshot's own guidance is temperature 1 / top_p 0.95 — it degrades badly
-  // at 0.7. This was already special-cased in ModelFactory.
-  moonshot: { maxOutputTokens: 32768, temperature: 1, topP: 0.95 },
-  // Bedrock Converse rejects a maxTokens above the model ceiling and the
-  // ceilings vary widely by inference profile, so stay low until advertised.
   bedrock: { maxOutputTokens: 8192, temperature: 0.7 },
-  // Local hardware — a 64k num_predict makes small models run for minutes.
   ollama: { maxOutputTokens: 8192, temperature: 0.7 }
 }
 
-/**
- * The live catalogue, mirrored from `assistantState` so that any code holding
- * only a `ModelSelection` can still resolve that model's parameters. Set by
- * whoever parses `/permissions`; empty until then, in which case
- * `resolveModelParams` uses provider defaults.
- */
 let catalog: ReadonlyArray<AIModel> = []
 
 export function setModelCatalog(models: ReadonlyArray<AIModel> | null | undefined): void {
@@ -73,14 +58,6 @@ function clampToContext(maxOutputTokens: number, contextWindow?: number): number
   return Math.min(maxOutputTokens, Math.floor(contextWindow / 2))
 }
 
-/**
- * Resolve the runtime parameters for a model selection.
- *
- * Precedence: backend catalogue value → per-provider default. The caller's
- * `requestedMaxTokens` acts as a *ceiling* only (e.g. the DApp generator
- * asking for a large budget) — it can lower the resolved value but never
- * raise it past what the model actually accepts.
- */
 export function resolveModelParams(
   selection: ModelSelection,
   requestedMaxTokens?: number,
@@ -89,7 +66,7 @@ export function resolveModelParams(
   const transport = entry
     ? modelTransportProvider(entry)
     : (selection.routeProvider ?? selection.provider)
-  const defaults = PROVIDER_PARAM_DEFAULTS[transport] ?? PROVIDER_PARAM_DEFAULTS.anthropic
+  const defaults = PROVIDER_PARAM_DEFAULTS[transport as ModelTransport] ?? PROVIDER_PARAM_DEFAULTS.openrouter
 
   const contextWindow = entry?.contextWindow ?? defaults.contextWindow
   let maxOutputTokens = entry?.maxOutputTokens ?? defaults.maxOutputTokens

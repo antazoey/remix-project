@@ -54,14 +54,28 @@ tape('resolveModelParams: backend catalogue value wins over the provider default
   t.end()
 })
 
-tape('resolveModelParams: falls back to per-provider defaults when the catalogue is silent', (t) => {
+tape('resolveModelParams: falls back to per-transport defaults when the catalogue is silent', (t) => {
   setModelCatalog([])
   const bedrock = resolveModelParams({ provider: 'bedrock', modelId: 'unknown' })
   t.equal(bedrock.maxOutputTokens, PROVIDER_PARAM_DEFAULTS.bedrock.maxOutputTokens, 'bedrock default')
 
-  const moonshot = resolveModelParams({ provider: 'moonshot', modelId: 'unknown' })
-  t.equal(moonshot.temperature, 1, 'moonshot keeps its own temperature')
-  t.equal(moonshot.topP, 0.95, 'moonshot keeps its own top_p')
+  const ollama = resolveModelParams({ provider: 'ollama', modelId: 'unknown' })
+  t.equal(ollama.maxOutputTokens, PROVIDER_PARAM_DEFAULTS.ollama.maxOutputTokens, 'local hardware default')
+  t.end()
+})
+
+tape('resolveModelParams: there are exactly three transports', (t) => {
+  t.deepEqual(Object.keys(PROVIDER_PARAM_DEFAULTS).sort(), ['bedrock', 'ollama', 'openrouter'],
+    'the vendor brands route through OpenRouter and are not transports')
+  t.end()
+})
+
+tape('resolveModelParams: a brand arriving as a transport falls back to OpenRouter defaults', (t) => {
+  setModelCatalog([])
+  // A row missing its `routeProvider`. ModelFactory reports the real problem;
+  // the params resolver just must not crash picking a default.
+  const params = resolveModelParams({ provider: 'anthropic', modelId: 'x' })
+  t.equal(params.maxOutputTokens, PROVIDER_PARAM_DEFAULTS.openrouter.maxOutputTokens)
   t.end()
 })
 

@@ -1,36 +1,34 @@
-import { ModelProvider } from '../../../types/deepagent'
-import { anthropicAdapter } from './anthropic'
+import { ModelTransport } from '../../../types/deepagent'
 import { bedrockAdapter } from './bedrock'
-import { mistralAdapter } from './mistral'
-import { moonshotAdapter } from './moonshot'
 import { ollamaAdapter } from './ollama'
-import { openaiAdapter } from './openai'
 import { openrouterAdapter } from './openrouter'
 import { ProviderAdapter } from './types'
 
-/**
- * The provider registry.
- *
- * Adding a provider is a new file plus one entry here — no edit to a shared
- * switch, and no risk of disturbing the other six while doing it.
- */
-export const PROVIDER_ADAPTERS: Record<ModelProvider, ProviderAdapter> = {
-  anthropic: anthropicAdapter,
-  openai: openaiAdapter,
+export const PROVIDER_ADAPTERS: Record<ModelTransport, ProviderAdapter> = {
   openrouter: openrouterAdapter,
-  mistralai: mistralAdapter,
-  moonshot: moonshotAdapter,
   bedrock: bedrockAdapter,
   ollama: ollamaAdapter
 }
 
-export function getProviderAdapter(provider: ModelProvider | string | undefined): ProviderAdapter {
-  const adapter = PROVIDER_ADAPTERS[provider as ModelProvider]
-  // Anthropic remains the implicit default, as it was in the original switch.
-  return adapter ?? PROVIDER_ADAPTERS.anthropic
+export const SUPPORTED_TRANSPORTS = Object.keys(PROVIDER_ADAPTERS) as ModelTransport[]
+
+export function isSupportedTransport(provider: string | undefined): provider is ModelTransport {
+  return !!provider && provider in PROVIDER_ADAPTERS
 }
 
-export function getProviderCapabilities(provider: ModelProvider | string | undefined) {
+export function getProviderAdapter(provider: string | undefined): ProviderAdapter {
+  if (!isSupportedTransport(provider)) {
+    throw new Error(
+      `[ModelFactory] '${provider ?? 'undefined'}' is not a transport. ` +
+      `Supported: ${SUPPORTED_TRANSPORTS.join(', ')}. ` +
+      'Vendor brands (anthropic, openai, mistralai, moonshot) reach us through OpenRouter — ' +
+      'the catalogue row needs `routeProvider: "openrouter"`.'
+    )
+  }
+  return PROVIDER_ADAPTERS[provider]
+}
+
+export function getProviderCapabilities(provider: string | undefined) {
   return getProviderAdapter(provider).capabilities
 }
 
