@@ -1081,6 +1081,7 @@ export class Blockchain extends Plugin {
 
             const prompt = `A contract was just deployed. Here is the deployment data: ${JSON.stringify(copy)}, ${JSON.stringify(copyResult)}.
             ${source ? `Here is the contract source code:\n${source}` : ''}
+            ${copy.funArgs && copy.funArgs.length ? `Here are the constructor arguments:\n${JSON.stringify(copy.funArgs)}` : ''}
             ${args.data.contractABI ? `Here is the ABI:\n${JSON.stringify(args.data.contractABI)}` : ''}
 
             Do the following, concisely:
