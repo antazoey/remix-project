@@ -5,7 +5,7 @@ import '../css/remix-ai-assistant.css'
 
 import { ChatCommandParser, GenerationParams, ChatHistory, HandleStreamResponse, AIModel, ANONYMOUS_FALLBACK_MODELS, remixAILogger, modelKey, parseModelKey, findModel, applyByokKeyPolicy, BYOK_API_KEY_SETTINGS, modelTransportProvider, onApiKeysChange, isAutoModelId, type ModelTransport } from '@remix/remix-ai-core'
 import { ToolApprovalRequest, ApiKeyErrorEvent } from '@remix/remix-ai-core'
-import { HandleOpenRouterResponse, HandleOllamaResponse } from '@remix/remix-ai-core'
+import { HandleOpenAICompatibleResponse, HandleOllamaResponse } from '@remix/remix-ai-core'
 //@ts-ignore
 import '../css/color.css'
 import { ModalTypes } from '@remix-ui/app'
@@ -1988,10 +1988,14 @@ export const RemixUiRemixAiAssistant = React.forwardRef<
           response.modelId = selectedModel?.id
         }
 
-        // Dispatch on the transport: it decides the wire format of the
-        // stream. This read `selectedModel.provider` when that could be a
-        // vendor brand, which is why there were parsers named after vendors we
-        // never actually talk to — everything hosted arrives over OpenRouter.
+        // Only the `remote` and `mcp` routes reach here: they bypass
+        // LangChain entirely, fetching the solcoder endpoint directly and
+        // handing back a raw Response whose SSE we parse ourselves. The
+        // DeepAgent route returns a plain string and already returned above,
+        // its streaming handled by LangChain + StreamEventHandler.
+        //
+        // The transport decides which parser: Ollama has its own SSE shape,
+        // everything else on solcoder is OpenAI-compatible.
         const currentProvider = (selectedModel ? modelTransportProvider(selectedModel) : undefined) || assistantChoice
 
         switch (currentProvider) {
@@ -2002,7 +2006,7 @@ export const RemixUiRemixAiAssistant = React.forwardRef<
             setIsThinking(thinking)
           }
 
-          await HandleOpenRouterResponse(
+          await HandleOpenAICompatibleResponse(
             response,
             (chunk: string) => {
               if (abortControllerRef.current?.signal.aborted) return

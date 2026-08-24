@@ -122,7 +122,7 @@ export const HandleStreamResponse = async (streamResponse, cb: (streamText: stri
   }
 };
 
-export const HandleOpenRouterResponse = async (aiResponse: IAIStreamResponse | any, cb: (streamText: string) => void, done_cb?: (result: string, thrID:string) => void, thinking_cb?: (isThinking: boolean) => void) => {
+export const HandleOpenAICompatibleResponse = async (aiResponse: IAIStreamResponse | any, cb: (streamText: string) => void, done_cb?: (result: string, thrID:string) => void, thinking_cb?: (isThinking: boolean) => void) => {
   // Handle both IAIStreamResponse format and plain response for backward compatibility
   const streamResponse = aiResponse?.streamResponse || aiResponse
   const uiToolCallback = aiResponse?.uiToolCallback
@@ -179,7 +179,7 @@ export const HandleOpenRouterResponse = async (aiResponse: IAIStreamResponse | a
           const jsonStr = line.replace(/^data: /, "").trim();
           if (jsonStr === "[DONE]") {
             if (!abortSignal?.aborted) {
-              trackTokenUsage(usage, 'openrouter', modelId);
+              trackTokenUsage(usage, 'openai-compatible', modelId);
               done_cb?.(resultText, threadId);
             }
             settled = true;
@@ -238,7 +238,7 @@ export const HandleOpenRouterResponse = async (aiResponse: IAIStreamResponse | a
               }
               cb("\n\n");
               settled = true; // the recursive call owns done_cb from here
-              HandleOpenRouterResponse(response, cb, done_cb)
+              HandleOpenAICompatibleResponse(response, cb, done_cb)
               return;
             }
 
@@ -300,7 +300,7 @@ export const HandleOpenRouterResponse = async (aiResponse: IAIStreamResponse | a
   }
 
   if (!settled && !abortSignal?.aborted) {
-    trackTokenUsage(usage, 'openrouter', modelId);
+    trackTokenUsage(usage, 'openai-compatible', modelId);
     done_cb?.(resultText, threadId);
   }
 }
