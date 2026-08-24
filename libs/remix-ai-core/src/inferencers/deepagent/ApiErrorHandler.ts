@@ -78,7 +78,11 @@ export function classifyApiError(error: any): ApiErrorClassification {
   // testing for 'ETIMEDOUT' against a lower-cased string never matched, which
   // silently downgraded every socket-level failure to UNKNOWN (non-retryable).
   const code = typeof error?.code === 'string' ? error.code.toUpperCase() : ''
-  if (message.includes('timeout') || message.includes('timed out') || message.includes('etimedout') ||
+  // `AbortSignal.timeout()` and our own run watchdog raise a DOMException named
+  // TimeoutError whose message need not contain the word "timeout", so the
+  // name has to be checked as well as the text.
+  if (error?.name === 'TimeoutError' ||
+      message.includes('timeout') || message.includes('timed out') || message.includes('etimedout') ||
       message.includes('esockettimedout') || code === 'ETIMEDOUT' || code === 'ESOCKETTIMEDOUT') {
     return { type: DeepAgentErrorType.REQUEST_TIMEOUT, retryable: true, retryAfter: 5 }
   }

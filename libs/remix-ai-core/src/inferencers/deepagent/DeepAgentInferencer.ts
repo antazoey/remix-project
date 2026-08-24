@@ -641,6 +641,18 @@ export class DeepAgentInferencer implements ICompletions, IGeneration {
     this.currentAbortController = localAbortController
     let fullResponse = ''
 
+    // `config.timeout` was set in the constructor and then read by nothing, so
+    // a graph that stopped making progress ran forever. Enforce it here rather
+    // than via LangGraph's own `timeout` option: that one aborts through an
+    // internal signal and surfaces as the same anonymous `Error("Abort")` as
+    // everything else, whereas aborting our own controller lets us stamp a
+    // reason and tell a timeout apart from a user cancel.
+    const runTimeoutMs = this.config.timeout
+    const runTimeout = setTimeout(() => {
+      remixAILogger.warn(`[DeepAgentInferencer] run exceeded ${runTimeoutMs}ms — aborting`)
+      localAbortController.abort(new DOMException(`Agent run exceeded ${runTimeoutMs}ms without completing.`, 'TimeoutError'))
+    }, runTimeoutMs)
+
     // Filter out system messages - they're already set during agent creation
     const langchainMessages = messages
       .filter(msg => msg.role !== 'system')
@@ -725,16 +737,32 @@ export class DeepAgentInferencer implements ICompletions, IGeneration {
       return fullResponse
     } catch (caught: any) {
       console.error('[DeepAgentInferencer] Error in runAgent:', caught)
+      // Every abort used to be read as "the user cancelled", so a run that
+      // timed out or died on a transport abort silently returned whatever
+      // partial text it had — indistinguishable from a deliberate stop.
+      const abortReason: any = localAbortController.signal.aborted
+        ? localAbortController.signal.reason
+        : undefined
+      if (abortReason?.name === 'TimeoutError') {
+        throw new DeepAgentError(
+          abortReason.message || `Agent run exceeded ${runTimeoutMs}ms.`,
+          DeepAgentErrorType.REQUEST_TIMEOUT,
+          caught
+        )
+      }
       if (caught?.name === 'AbortError' || localAbortController.signal.aborted) {
         remixAILogger.log('[DeepAgentInferencer] Request cancelled by user')
         return fullResponse
       }
 
-      // Not our abort: LangGraph aborts its own graph when a node throws and
-      // rethrows a bare `Error("Abort")`, which hides the cause (a 402, an
-      // upstream API error, a tool crash) behind a meaningless message. The
-      // stream carried the real error on an *_error event — swap it back in so
-      // the envelope/classification below sees what actually happened.
+      // Not our abort. `Error("Abort")` has exactly one source in LangGraph
+      // (`PregelRunner._executeTasksWithRetry`): a superstep starting while
+      // the composed abort signal is already aborted. That composed signal
+      // includes the runner's *exception* signal, which fires as soon as any
+      // node throws — so a node failure races the graph into an abort and the
+      // real cause (a 402, an upstream API error, a tool crash) is replaced by
+      // this meaningless message. The stream carried the real error on an
+      // *_error event; swap it back in so the classification below sees it.
       let error: any = caught
       if (caught?.message === 'Abort') {
         const streamError = this.streamEventHandler.getStreamError()
@@ -881,6 +909,7 @@ export class DeepAgentInferencer implements ICompletions, IGeneration {
 
       throw error
     } finally {
+      clearTimeout(runTimeout)
       clearQuickDappDocsContext()
       // Best-effort trace delivery: the SDK drains only a slice of its queue
       // per tick, so the tail of this run's trace needs an explicit push.
@@ -1172,7 +1201,9 @@ export class DeepAgentInferencer implements ICompletions, IGeneration {
   cancelRequest(): void {
     remixAILogger.log('[DeepAgentInferencer] Cancelling request...')
     if (this.currentAbortController) {
-      this.currentAbortController.abort()
+      // A reason makes the abort self-describing at the catch site, which is
+      // what lets a user cancel be told apart from a timeout.
+      this.currentAbortController.abort(new DOMException('The user cancelled the request.', 'AbortError'))
       this.currentAbortController = null
     }
     // Aborting the stream does NOT unblock a run that is parked on a HITL

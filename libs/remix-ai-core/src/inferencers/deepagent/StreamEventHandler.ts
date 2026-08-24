@@ -65,7 +65,20 @@ export class StreamEventHandler {
   private recordStreamError(eventType: string, event: any): void {
     const error = event?.data?.error ?? event?.data?.output ?? null
     remixAILogger.error(`[StreamEventHandler] ${eventType}`, error ?? event)
-    if (!this.streamError && error) this.streamError = error
+    if (this.streamError) return
+
+    if (error) {
+      this.streamError = error
+      return
+    }
+
+    // An error event with no payload still means a node failed. Recording
+    // nothing here is why runs surfaced as a bare `Error: Abort` with
+    // "graph aborted with no recorded node error" — the cause was known
+    // (which node, which event) and thrown away. Synthesize one instead.
+    const name = event?.name ?? event?.metadata?.langgraph_node ?? 'unknown node'
+    const runId = event?.run_id ? ` (run ${event.run_id})` : ''
+    this.streamError = new Error(`${eventType} in ${name}${runId} — the provider reported no error detail`)
   }
 
   stopInactivityTracking(): void {

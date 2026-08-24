@@ -285,3 +285,19 @@ tape('isAutoModelId: router pseudo-models are never a concrete selection', (t) =
   t.equal(isAutoModelId(undefined), false)
   t.end()
 })
+
+tape('classifyApiError: a bare LangGraph "Abort" is not silently unknown-retryable', (t) => {
+  // `Error("Abort")` escapes LangGraph whenever a node throws (the runner's
+  // exception signal races the graph into an abort). It must never be retried
+  // blindly — the underlying node failure decides that.
+  const { retryable } = classifyApiError({ message: 'Abort' })
+  t.equal(retryable, false)
+  t.end()
+})
+
+tape('classifyApiError: a timeout abort is retryable, a user abort is not misread', (t) => {
+  t.equal(classifyApiError({ name: 'TimeoutError', message: 'Agent run exceeded 300000ms.' }).type,
+    DeepAgentErrorType.REQUEST_TIMEOUT)
+  t.equal(classifyApiError({ name: 'TimeoutError', message: 'Agent run exceeded 300000ms.' }).retryable, true)
+  t.end()
+})
