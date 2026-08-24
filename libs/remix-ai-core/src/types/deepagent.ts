@@ -5,13 +5,12 @@
 export type ModelTransport = 'openrouter' | 'bedrock' | 'ollama'
 
 /**
- * The brand a model is displayed under. A superset of `ModelTransport`: the
- * vendor brands below reach us through OpenRouter and exist only so the picker
- * can group by vendor rather than showing one enormous OpenRouter section.
- * Never switch on this to decide how to talk to a model — use
- * `modelTransportProvider()` and `ModelTransport` for that.
+ * @deprecated Alias of {@link ModelTransport}, kept so existing call sites keep
+ * compiling. The vendor brands ('anthropic' | 'mistralai' | 'openai' |
+ * 'moonshot') are gone: every hosted model reaches us through OpenRouter, so
+ * there is nothing left for a brand to select. Prefer `ModelTransport`.
  */
-export type ModelProvider = 'anthropic' | 'mistralai' | 'openai' | 'moonshot' | ModelTransport
+export type ModelProvider = ModelTransport
 
 export interface ModelSelection {
   /** Display brand. */

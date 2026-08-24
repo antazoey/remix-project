@@ -454,27 +454,14 @@ export class MCPInferencer extends RemoteInferencer implements ICompletions, IGe
               //   toolResultContent = `[Tool executed successfully - Result compressed to save tokens]\n\nPreview:\n${preview}...\n\n[${toolResultContent.length} characters total]`;
               // }
 
-              // Format tool result based on provider
-              if (options.provider === 'anthropic') {
-                toolMessages.push({
-                  type: 'tool_result',
-                  tool_use_id: llmToolCall.id,
-                  content: toolResultContent
-                });
-              } else if (options.provider === 'openai') {
-                toolMessages.push({
-                  role: 'tool',
-                  tool_call_id: llmToolCall.id,
-                  content: toolResultContent
-                });
-              } else if (options.provider === 'mistralai') {
-                toolMessages.push({
-                  role: 'tool',
-                  name: mcpToolCall.name,
-                  tool_call_id: llmToolCall.id,
-                  content: toolResultContent
-                });
-              }
+              // OpenAI-compatible tool result — the shape OpenRouter, Ollama
+              // and the Remix proxy all speak.
+              toolMessages.push({
+                role: 'tool',
+                name: mcpToolCall.name,
+                tool_call_id: llmToolCall.id,
+                content: toolResultContent
+              });
             } catch (error) {
               if (uiCallback) {
                 uiCallback(false);
@@ -483,26 +470,11 @@ export class MCPInferencer extends RemoteInferencer implements ICompletions, IGe
               remixAILogger.error(`[MCP] Tool execution error for ${llmToolCall.function?.name}:`, error);
               const errorContent = `Error executing tool: ${error.message}`;
 
-              if (options.provider === 'anthropic') {
-                toolMessages.push({
-                  type: 'tool_result',
-                  tool_use_id: llmToolCall.id,
-                  content: errorContent,
-                  is_error: true
-                });
-              } else if (options.provider === 'openai') {
-                toolMessages.push({
-                  role: 'tool',
-                  tool_call_id: llmToolCall.id,
-                  content: errorContent
-                });
-              } else if (options.provider === 'mistralai') {
-                toolMessages.push({
-                  role: 'tool',
-                  tool_call_id: llmToolCall.id,
-                  content: errorContent
-                });
-              }
+              toolMessages.push({
+                role: 'tool',
+                tool_call_id: llmToolCall.id,
+                content: errorContent
+              });
             }
           }
 
@@ -511,47 +483,23 @@ export class MCPInferencer extends RemoteInferencer implements ICompletions, IGe
             const currentChatHistory = enhancedOptions.chatHistory || [];
             let toolsMessagesArray = [];
 
-            if (options.provider === 'anthropic') {
-              // Anthropic: Convert tool_use blocks to assistant message, then user message with tool_result blocks
-              const toolUseBlocks = tool_calls.map(tc => ({
-                type: 'tool_use',
-                id: tc.id,
-                name: tc.function?.name || '',
-                input: typeof tc.function?.arguments === 'string'
-                  ? JSON.parse(tc.function.arguments || '{}')
-                  : tc.function?.arguments || {}
-              }));
-
-              if (existingToolsMessages.length === 0) {
-                toolsMessagesArray = [
-                  ...currentChatHistory,
-                  { role: 'user', content: prompt },
-                  { role: 'assistant', content: toolUseBlocks },
-                  { role: 'user', content: toolMessages }
-                ];
-              } else {
-                // Subsequent iterations: append to existing tool messages
-                toolsMessagesArray = [
-                  ...existingToolsMessages,
-                  { role: 'assistant', content: toolUseBlocks },
-                  { role: 'user', content: toolMessages }
-                ];
-              }
-            } else if (options.provider === 'openai' || options.provider === 'mistralai') {
-              if (existingToolsMessages.length === 0) {
-                toolsMessagesArray = [
-                  ...currentChatHistory,
-                  { role: 'user', content: prompt },
-                  { role: 'assistant', tool_calls: tool_calls },
-                  ...toolMessages
-                ];
-              } else {
-                toolsMessagesArray = [
-                  ...existingToolsMessages,
-                  { role: 'assistant', tool_calls: tool_calls },
-                  ...toolMessages
-                ];
-              }
+            // OpenAI-compatible transcript: an assistant message carrying
+            // `tool_calls`, followed by one `role: 'tool'` message per result.
+            // The Anthropic variant (tool_use blocks in an assistant message,
+            // tool_result blocks in a user message) went with its brand.
+            if (existingToolsMessages.length === 0) {
+              toolsMessagesArray = [
+                ...currentChatHistory,
+                { role: 'user', content: prompt },
+                { role: 'assistant', tool_calls: tool_calls },
+                ...toolMessages
+              ];
+            } else {
+              toolsMessagesArray = [
+                ...existingToolsMessages,
+                { role: 'assistant', tool_calls: tool_calls },
+                ...toolMessages
+              ];
             }
 
             const followUpOptions = {
@@ -561,19 +509,11 @@ export class MCPInferencer extends RemoteInferencer implements ICompletions, IGe
 
             enhancedOptions.toolsMessages = toolsMessagesArray;
 
-            if (options.provider === 'openai' || options.provider === 'mistralai') {
-              return {
-                streamResponse: await this.baseInferencer.answer(prompt, followUpOptions),
-                callback: toolExecutionStatusCallback,
-                uiToolCallback: uiCallback
-              } as IAIStreamResponse;
-            } else {
-              return {
-                streamResponse: await this.baseInferencer.answer("", followUpOptions),
-                callback: toolExecutionStatusCallback,
-                uiToolCallback: uiCallback
-              } as IAIStreamResponse;
-            }
+            return {
+              streamResponse: await this.baseInferencer.answer(prompt, followUpOptions),
+              callback: toolExecutionStatusCallback,
+              uiToolCallback: uiCallback
+            } as IAIStreamResponse;
           }
         }
       }
@@ -627,9 +567,7 @@ export class MCPInferencer extends RemoteInferencer implements ICompletions, IGe
               content: extractContent(result)
             };
 
-            if (options.provider !== 'anthropic') {
-              toolResult.tool_call_id = llmToolCall.id;
-            }
+            toolResult.tool_call_id = llmToolCall.id;
 
             toolResults.push(toolResult);
           } catch (error) {
@@ -637,9 +575,7 @@ export class MCPInferencer extends RemoteInferencer implements ICompletions, IGe
               content: `Error: ${error.message}`
             };
 
-            if (options.provider !== 'anthropic') {
-              errorResult.tool_call_id = llmToolCall.id;
-            }
+            errorResult.tool_call_id = llmToolCall.id;
 
             toolResults.push(errorResult);
           }
@@ -860,30 +796,16 @@ Use this tool when you need:
       }
     };
 
-    // Format based on provider
-    if (provider === 'anthropic') {
-      return [executeToolDef, getToolSchemaDef];
-    } else {
-      // OpenAI and other providers format
-      return [
-        {
-          type: "function",
-          function: {
-            name: executeToolDef.name,
-            description: executeToolDef.description,
-            parameters: executeToolDef.input_schema
-          }
-        },
-        {
-          type: "function",
-          function: {
-            name: getToolSchemaDef.name,
-            description: getToolSchemaDef.description,
-            parameters: getToolSchemaDef.input_schema
-          }
-        }
-      ];
-    }
+    // OpenAI-compatible function tools. The Anthropic form (bare
+    // name/description/input_schema objects) left with its brand.
+    return [executeToolDef, getToolSchemaDef].map((def) => ({
+      type: "function",
+      function: {
+        name: def.name,
+        description: def.description,
+        parameters: def.input_schema
+      }
+    }));
   }
 
   convertLLMToolCallToMCP(llmToolCall: any): IMCPToolCall {

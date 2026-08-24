@@ -3,9 +3,9 @@ import React, { useState, useEffect, useCallback, useRef, useImperativeHandle, M
 //@ts-ignore
 import '../css/remix-ai-assistant.css'
 
-import { ChatCommandParser, GenerationParams, ChatHistory, HandleStreamResponse, AIModel, ANONYMOUS_FALLBACK_MODELS, remixAILogger, modelKey, parseModelKey, findModel, applyByokKeyPolicy, BYOK_API_KEY_SETTINGS, modelTransportProvider, onApiKeysChange, isAutoModelId } from '@remix/remix-ai-core'
+import { ChatCommandParser, GenerationParams, ChatHistory, HandleStreamResponse, AIModel, ANONYMOUS_FALLBACK_MODELS, remixAILogger, modelKey, parseModelKey, findModel, applyByokKeyPolicy, BYOK_API_KEY_SETTINGS, modelTransportProvider, onApiKeysChange, isAutoModelId, type ModelTransport } from '@remix/remix-ai-core'
 import { ToolApprovalRequest, ApiKeyErrorEvent } from '@remix/remix-ai-core'
-import { HandleOpenAIResponse, HandleMistralAIResponse, HandleAnthropicResponse, HandleOllamaResponse } from '@remix/remix-ai-core'
+import { HandleOpenRouterResponse, HandleOllamaResponse } from '@remix/remix-ai-core'
 //@ts-ignore
 import '../css/color.css'
 import { ModalTypes } from '@remix-ui/app'
@@ -97,9 +97,9 @@ export const RemixUiRemixAiAssistant = React.forwardRef<
   }, [messages, props.currentConversationId])
   const [isThinking, setIsThinking] = useState(false)
   const [showModelSelector, setShowModelSelector] = useState(false)
-  const [assistantChoice, setAssistantChoice] = useState<'openai' | 'mistralai' | 'anthropic' | 'ollama'>(
-    'mistralai'
-  )
+  // OpenRouter is the router every hosted model arrives on, so it is the only
+  // sensible value before a selection resolves from /permissions.
+  const [assistantChoice, setAssistantChoice] = useState<ModelTransport>('openrouter')
   const [showArchivedConversations, setShowArchivedConversations] = useState(false)
   const [showButton, setShowButton] = useState(true);
   const [isAiChatMaximized, setIsAiChatMaximized] = useState(false)
@@ -412,7 +412,7 @@ export const RemixUiRemixAiAssistant = React.forwardRef<
         if (model) {
           setSelectedModelId(currentModelId)
           setSelectedModel(model)
-          setAssistantChoice(model.provider as 'openai' | 'mistralai' | 'anthropic' | 'ollama')
+          setAssistantChoice(model.provider)
         }
         await props.plugin.call('remixAI', 'setModelAccess', modelAccess)
       } catch (error) {
@@ -430,7 +430,7 @@ export const RemixUiRemixAiAssistant = React.forwardRef<
       if (model) {
         setSelectedModelId(modelId)
         setSelectedModel(model)
-        setAssistantChoice(model.provider as 'openai' | 'mistralai' | 'anthropic' | 'ollama')
+        setAssistantChoice(model.provider)
       }
     }
 
@@ -516,7 +516,7 @@ export const RemixUiRemixAiAssistant = React.forwardRef<
     if (!fallback) return
     setSelectedModelId(fallback.id)
     setSelectedModel(fallback)
-    setAssistantChoice(fallback.provider as 'openai' | 'mistralai' | 'anthropic' | 'ollama')
+    setAssistantChoice(fallback.provider)
     try {
       await props.plugin.call('remixAI', 'setModel', fallback.id, fallback.provider)
     } catch (e) {
@@ -593,7 +593,7 @@ export const RemixUiRemixAiAssistant = React.forwardRef<
           // picker shows ANONYMOUS_FALLBACK_MODELS while logged out.
           setSelectedModelId('')
           setSelectedModel(null)
-          setAssistantChoice('mistralai')
+          setAssistantChoice('openrouter')
         }
         await modelAccess.refreshAccess()
         isRefreshing = false
@@ -1988,57 +1988,21 @@ export const RemixUiRemixAiAssistant = React.forwardRef<
           response.modelId = selectedModel?.id
         }
 
-        // Derive provider from selectedModel to avoid stale state issues
-        const currentProvider = selectedModel?.provider || assistantChoice
+        // Dispatch on the transport: it decides the wire format of the
+        // stream. This read `selectedModel.provider` when that could be a
+        // vendor brand, which is why there were parsers named after vendors we
+        // never actually talk to — everything hosted arrives over OpenRouter.
+        const currentProvider = (selectedModel ? modelTransportProvider(selectedModel) : undefined) || assistantChoice
 
         switch (currentProvider) {
-        case 'openai':
+        case 'openrouter':
         {
           const thinkingCallback = (thinking: boolean) => {
             if (abortControllerRef.current?.signal.aborted) return
             setIsThinking(thinking)
           }
 
-          await HandleOpenAIResponse(
-            response,
-            (chunk: string) => {
-              if (abortControllerRef.current?.signal.aborted) return
-              appendAssistantChunk(assistantId, chunk)
-            },
-            (finalText: string, threadId) => {
-              if (abortControllerRef.current?.signal.aborted) return
-              setIsThinking(false)
-              Promise.resolve(ChatHistory.pushHistory(trimmed, finalText)).then(() => props.plugin.loadConversations())
-              setIsStreaming(false)
-              props.plugin.call('remixAI', 'setAssistantThrId', threadId)
-            },
-            thinkingCallback
-          )
-          break;
-        }
-        case 'mistralai':
-          await HandleMistralAIResponse(
-            response,
-            (chunk: string) => {
-              if (abortControllerRef.current?.signal.aborted) return
-              appendAssistantChunk(assistantId, chunk)
-            },
-            (finalText: string, threadId) => {
-              if (abortControllerRef.current?.signal.aborted) return
-              Promise.resolve(ChatHistory.pushHistory(trimmed, finalText)).then(() => props.plugin.loadConversations())
-              setIsStreaming(false)
-              props.plugin.call('remixAI', 'setAssistantThrId', threadId)
-            }
-          )
-          break;
-        case 'anthropic':
-        {
-          const thinkingCallback = (thinking: boolean) => {
-            if (abortControllerRef.current?.signal.aborted) return
-            setIsThinking(thinking)
-          }
-
-          await HandleAnthropicResponse(
+          await HandleOpenRouterResponse(
             response,
             (chunk: string) => {
               if (abortControllerRef.current?.signal.aborted) return
@@ -2229,7 +2193,7 @@ export const RemixUiRemixAiAssistant = React.forwardRef<
         if (def && def.id && def.available !== false) {
           setSelectedModelId(def.id)
           setSelectedModel(def)
-          setAssistantChoice(def.provider as 'openai' | 'mistralai' | 'anthropic' | 'ollama')
+          setAssistantChoice(def.provider)
           try {
             await props.plugin.call('remixAI', 'setModel', def.id, def.provider)
           } catch (e) {
@@ -2293,7 +2257,7 @@ export const RemixUiRemixAiAssistant = React.forwardRef<
     setSelectedModel(model)
 
     // Always update assistantChoice to match the selected model's provider
-    setAssistantChoice(model.provider as 'openai' | 'mistralai' | 'anthropic' | 'ollama')
+    setAssistantChoice(model.provider)
     remixAILogger.log('Setting assistant choice to:', model.provider)
 
     if (model.provider === 'ollama') {
@@ -2318,7 +2282,7 @@ export const RemixUiRemixAiAssistant = React.forwardRef<
             await props.plugin.call('remixAI', 'setModel', fallbackModel.id, fallbackModel.provider)
             setSelectedModelId(fallbackModel.id)
             setSelectedModel(fallbackModel)
-            setAssistantChoice(fallbackModel.provider as 'openai' | 'mistralai' | 'anthropic' | 'ollama')
+            setAssistantChoice(fallbackModel.provider)
           }
         } catch (e) {
           remixAILogger.warn('[remix-ai-assistant] failed to switch back to default model after Ollama unavailable', e)

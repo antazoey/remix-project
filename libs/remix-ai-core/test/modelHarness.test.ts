@@ -31,7 +31,7 @@ import {
 function model(partial: Partial<AIModel>): AIModel {
   return {
     id: 'test-model',
-    provider: 'anthropic',
+    provider: 'openrouter',
     displayName: 'Test',
     description: '',
     category: 'general',
@@ -46,8 +46,8 @@ function model(partial: Partial<AIModel>): AIModel {
 }
 
 tape('resolveModelParams: backend catalogue value wins over the provider default', (t) => {
-  setModelCatalog([model({ id: 'm1', provider: 'anthropic', maxOutputTokens: 4096, temperature: 0.2 })])
-  const params = resolveModelParams({ provider: 'anthropic', modelId: 'm1' })
+  setModelCatalog([model({ id: 'm1', provider: 'openrouter', maxOutputTokens: 4096, temperature: 0.2 })])
+  const params = resolveModelParams({ provider: 'openrouter', modelId: 'm1' })
   t.equal(params.maxOutputTokens, 4096, 'uses the advertised output limit')
   t.equal(params.temperature, 0.2, 'uses the advertised temperature')
   setModelCatalog([])
@@ -74,23 +74,23 @@ tape('resolveModelParams: a brand arriving as a transport falls back to OpenRout
   setModelCatalog([])
   // A row missing its `routeProvider`. ModelFactory reports the real problem;
   // the params resolver just must not crash picking a default.
-  const params = resolveModelParams({ provider: 'anthropic', modelId: 'x' })
+  const params = resolveModelParams({ provider: 'openrouter', modelId: 'x' })
   t.equal(params.maxOutputTokens, PROVIDER_PARAM_DEFAULTS.openrouter.maxOutputTokens)
   t.end()
 })
 
 tape('resolveModelParams: routeProvider decides the transport defaults', (t) => {
   setModelCatalog([])
-  const params = resolveModelParams({ provider: 'anthropic', modelId: 'x', routeProvider: 'ollama' })
+  const params = resolveModelParams({ provider: 'openrouter', modelId: 'x', routeProvider: 'ollama' })
   t.equal(params.maxOutputTokens, PROVIDER_PARAM_DEFAULTS.ollama.maxOutputTokens, 'routed through ollama')
   t.end()
 })
 
 tape('resolveModelParams: the caller budget is a ceiling, never a raise', (t) => {
   setModelCatalog([model({ id: 'm1', maxOutputTokens: 8192 })])
-  t.equal(resolveModelParams({ provider: 'anthropic', modelId: 'm1' }, 1000).maxOutputTokens, 1000,
+  t.equal(resolveModelParams({ provider: 'openrouter', modelId: 'm1' }, 1000).maxOutputTokens, 1000,
     'a smaller request lowers the budget')
-  t.equal(resolveModelParams({ provider: 'anthropic', modelId: 'm1' }, 999999).maxOutputTokens, 8192,
+  t.equal(resolveModelParams({ provider: 'openrouter', modelId: 'm1' }, 999999).maxOutputTokens, 8192,
     'a larger request cannot exceed what the model accepts')
   setModelCatalog([])
   t.end()
@@ -98,7 +98,7 @@ tape('resolveModelParams: the caller budget is a ceiling, never a raise', (t) =>
 
 tape('resolveModelParams: output budget never eats more than half the context window', (t) => {
   setModelCatalog([model({ id: 'm1', maxOutputTokens: 100000, contextWindow: 8000 })])
-  const params = resolveModelParams({ provider: 'anthropic', modelId: 'm1' })
+  const params = resolveModelParams({ provider: 'openrouter', modelId: 'm1' })
   t.equal(params.maxOutputTokens, 4000, 'clamped so the prompt still fits')
   setModelCatalog([])
   t.end()
@@ -107,8 +107,8 @@ tape('resolveModelParams: output budget never eats more than half the context wi
 tape('parseAIModelsFromPermissions: reads the runtime params, ignoring junk', (t) => {
   const parsed = parseAIModelsFromPermissions({
     ai_models: [
-      { id: 'a', provider: 'anthropic', max_output_tokens: 8192, context_window: 200000, temperature: 0.3, top_p: 0.9, supports_reasoning: true },
-      { id: 'b', provider: 'openai', max_output_tokens: 0, context_window: -5, temperature: 'hot' }
+      { id: 'a', provider: 'openrouter', max_output_tokens: 8192, context_window: 200000, temperature: 0.3, top_p: 0.9, supports_reasoning: true },
+      { id: 'b', provider: 'bedrock', max_output_tokens: 0, context_window: -5, temperature: 'hot' }
     ]
   })
   t.equal(parsed![0].maxOutputTokens, 8192)

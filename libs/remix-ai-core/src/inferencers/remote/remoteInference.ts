@@ -60,14 +60,14 @@ export class RemoteInferencer implements ICompletions, IGeneration {
     this.event = new EventEmitter()
   }
 
-  protected getProviderByteLimit(provider?: string): number {
-    const providerLimits: Record<string, number> = {
-      'mistralai': 70000,
-      'anthropic': 70000,
-      'openai': 70000
-    };
-
-    return provider ? (providerLimits[provider.toLowerCase()] || 70000) : 70000;
+  /**
+   * Prompt byte ceiling. This was a per-brand table in which every brand
+   * mapped to the same 70000, and the brands ('mistralai', 'anthropic',
+   * 'openai') no longer exist — so it was a lookup that could only ever
+   * return its own default.
+   */
+  protected getProviderByteLimit(_provider?: string): number {
+    return 70000;
   }
 
   protected sanitizePromptByteSize(prompt: string, provider?: string): string {

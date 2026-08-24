@@ -85,7 +85,7 @@ export const OLLAMA_MODEL: AIModel = {
  */
 export const ANONYMOUS_PLACEHOLDER_MODEL: AIModel = {
   id: '__signin__',
-  provider: 'mistralai',
+  provider: 'openrouter',
   displayName: 'Sign in to use AI models',
   description: 'Sign in to your Remix account to access AI features.',
   category: 'general',
@@ -328,22 +328,6 @@ export function isOpenRouterRouted(model: AIModel): boolean {
   return model.routeProvider === 'openrouter' || model.provider === 'openrouter'
 }
 
-/**
- * OpenRouter ids are `vendor/slug` (e.g. `anthropic/claude-sonnet-5`). Map the
- * vendor segment onto the brand the picker groups under, so an OpenRouter-routed
- * Claude lands in the Anthropic section rather than a 400-row OpenRouter one.
- * Vendors absent from this map keep `provider: 'openrouter'` and stay grouped
- * under OpenRouter.
- */
-const OPENROUTER_VENDOR_BRANDS: Record<string, AIModel['provider']> = {
-  anthropic: 'anthropic',
-  openai: 'openai',
-  mistralai: 'mistralai',
-  mistral: 'mistralai',
-  moonshotai: 'moonshot',
-  moonshot: 'moonshot'
-}
-
 /** `anthropic/claude-sonnet-5` → `Claude Sonnet 5`. Only used when the backend
  *  sent no display_name (parseAIModelsFromPermissions falls back to the id). */
 function prettifyOpenRouterId(id: string): string {
@@ -356,15 +340,14 @@ function prettifyOpenRouterId(id: string): string {
 }
 
 /**
- * OpenRouter is the primary route: Anthropic / OpenAI / Mistral / Moonshot
- * models reach us as `provider: 'openrouter'` rows and are rebranded here to
- * their vendor so the picker groups them by brand, with `routeProvider:
- * 'openrouter'` carrying the actual transport (ModelFactory reads
- * `routeProvider ?? provider`). The model id is left untouched — OpenRouter
- * requires the full `vendor/slug`.
+ * OpenRouter rows: stamp the transport and make the display name readable.
  *
- * Needs no per-model rule table: the vendor prefix is part of every
- * OpenRouter id.
+ * This used to also rebrand each row onto its vendor ('anthropic', 'openai',
+ * 'mistralai', 'moonshot') so the picker could group by brand. Those brands
+ * are gone — every hosted model reaches us through OpenRouter, so a brand
+ * selected nothing and only invited code to switch on it as if it were a
+ * transport. The model id is left untouched: OpenRouter requires the full
+ * `vendor/slug`, which still carries the vendor for anyone displaying it.
  */
 export function curateOpenRouterBrandedModels(models: AIModel[]): AIModel[] {
   if (!Array.isArray(models) || models.length === 0) return models
@@ -375,13 +358,8 @@ export function curateOpenRouterBrandedModels(models: AIModel[]): AIModel[] {
     const displayName = model.displayName && model.displayName !== model.id
       ? model.displayName
       : prettifyOpenRouterId(model.id)
-    const vendor = model.id.includes('/') ? model.id.slice(0, model.id.indexOf('/')).toLowerCase() : ''
-    const brand = OPENROUTER_VENDOR_BRANDS[vendor]
-    // Unmapped vendor (x-ai, google, deepseek, …) — stays under OpenRouter.
-    if (!brand) return { ...model, displayName }
     return {
       ...model, // preserves backend `isDefault`, `available`, `sortOrder`, etc.
-      provider: brand,
       routeProvider: 'openrouter' as const,
       displayName
     }

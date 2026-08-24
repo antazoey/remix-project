@@ -16,7 +16,7 @@ import { AIModel } from '../src/types/models'
 function row(partial: Partial<AIModel>): AIModel {
   return {
     id: 'id',
-    provider: 'anthropic',
+    provider: 'openrouter',
     displayName: '',
     description: '',
     category: 'general',
@@ -43,7 +43,7 @@ function mockPlugin(models: AIModel[], taskModels: Record<string, string> = {}) 
 
 tape('resolveCodeCapableSelection: keeps the current model when it is code-capable', async (t) => {
   const plugin = mockPlugin([row({ id: 'good', capabilities: ['chat', 'code'] })])
-  const result = await resolveCodeCapableSelection(plugin, { provider: 'anthropic', modelId: 'good' })
+  const result = await resolveCodeCapableSelection(plugin, { provider: 'openrouter', modelId: 'good' })
   t.equal(result, null, 'null means "no substitution needed"')
   t.end()
 })
@@ -53,7 +53,7 @@ tape('resolveCodeCapableSelection: swaps out a model the backend says cannot cod
     row({ id: 'weak', capabilities: ['chat'] }),
     row({ id: 'strong', capabilities: ['chat', 'code'] })
   ])
-  const result = await resolveCodeCapableSelection(plugin, { provider: 'anthropic', modelId: 'weak' })
+  const result = await resolveCodeCapableSelection(plugin, { provider: 'openrouter', modelId: 'weak' })
   t.equal(result?.modelId, 'strong')
   t.end()
 })
@@ -63,7 +63,7 @@ tape('resolveCodeCapableSelection: the backend task assignment wins', async (t) 
     [row({ id: 'weak', capabilities: ['chat'] }), row({ id: 'assigned' }), row({ id: 'other' })],
     { code_generation: 'assigned' }
   )
-  const result = await resolveCodeCapableSelection(plugin, { provider: 'anthropic', modelId: 'weak' })
+  const result = await resolveCodeCapableSelection(plugin, { provider: 'openrouter', modelId: 'weak' })
   t.equal(result?.modelId, 'assigned')
   t.end()
 })
@@ -71,8 +71,8 @@ tape('resolveCodeCapableSelection: the backend task assignment wins', async (t) 
 tape('resolveCodeCapableSelection: prefers a candidate on the same transport', async (t) => {
   const plugin = mockPlugin([
     row({ id: 'weak', capabilities: ['chat'], provider: 'bedrock' }),
-    row({ id: 'elsewhere', provider: 'anthropic', routeProvider: 'openrouter' }),
-    row({ id: 'same-route', provider: 'anthropic', routeProvider: 'bedrock' })
+    row({ id: 'elsewhere', provider: 'openrouter', routeProvider: 'openrouter' }),
+    row({ id: 'same-route', provider: 'bedrock', routeProvider: 'bedrock' })
   ])
   const result = await resolveCodeCapableSelection(plugin, { provider: 'bedrock', modelId: 'weak' })
   t.equal(result?.modelId, 'same-route', 'keeps the request path unchanged')
@@ -81,33 +81,33 @@ tape('resolveCodeCapableSelection: prefers a candidate on the same transport', a
 })
 
 tape('resolveCodeCapableSelection: returns null rather than guessing when the catalogue is empty', async (t) => {
-  const result = await resolveCodeCapableSelection(mockPlugin([]), { provider: 'anthropic', modelId: 'x' })
+  const result = await resolveCodeCapableSelection(mockPlugin([]), { provider: 'openrouter', modelId: 'x' })
   t.equal(result, null, 'the caller keeps its own model — no literal fallback id')
   t.end()
 })
 
 tape('resolveCodeCapableSelection: survives assistantState being unavailable', async (t) => {
   const broken = { call: async () => { throw new Error('plugin not active') } } as any
-  const result = await resolveCodeCapableSelection(broken, { provider: 'anthropic', modelId: 'x' })
+  const result = await resolveCodeCapableSelection(broken, { provider: 'openrouter', modelId: 'x' })
   t.equal(result, null)
   t.end()
 })
 
 tape('resolveDegradeSelection: never returns the model that just failed', async (t) => {
-  const plugin = mockPlugin([row({ id: 'failed' }), row({ id: 'other', provider: 'openai' })])
-  const result = await resolveDegradeSelection(plugin, { provider: 'anthropic', modelId: 'failed' })
+  const plugin = mockPlugin([row({ id: 'failed' }), row({ id: 'other', provider: 'bedrock' })])
+  const result = await resolveDegradeSelection(plugin, { provider: 'openrouter', modelId: 'failed' })
   t.equal(result?.modelId, 'other')
   t.end()
 })
 
 tape('resolveDegradeSelection: prefers a different transport — the failing one is unhealthy', async (t) => {
   const plugin = mockPlugin([
-    row({ id: 'failed', provider: 'anthropic', routeProvider: 'openrouter' }),
-    row({ id: 'same-route', provider: 'openai', routeProvider: 'openrouter' }),
-    row({ id: 'other-route', provider: 'mistralai' })
+    row({ id: 'failed', provider: 'openrouter', routeProvider: 'openrouter' }),
+    row({ id: 'same-route', provider: 'openrouter', routeProvider: 'openrouter' }),
+    row({ id: 'other-route', provider: 'bedrock' })
   ])
   const result = await resolveDegradeSelection(plugin, {
-    provider: 'anthropic', modelId: 'failed', routeProvider: 'openrouter'
+    provider: 'openrouter', modelId: 'failed', routeProvider: 'openrouter'
   })
   t.equal(result?.modelId, 'other-route')
   t.end()
@@ -119,17 +119,17 @@ tape('resolveDegradeSelection: skips unavailable rows and local models', async (
     row({ id: 'locked', available: false }),
     row({ id: 'ollama', provider: 'ollama' })
   ])
-  const result = await resolveDegradeSelection(plugin, { provider: 'anthropic', modelId: 'failed' })
+  const result = await resolveDegradeSelection(plugin, { provider: 'openrouter', modelId: 'failed' })
   t.equal(result, null, 'a locked row and a local runtime are not viable fallbacks')
   t.end()
 })
 
 tape('resolveDegradeSelection: ignores a task assignment naming an unavailable model', async (t) => {
   const plugin = mockPlugin(
-    [row({ id: 'failed' }), row({ id: 'stale', available: false }), row({ id: 'live', provider: 'openai' })],
+    [row({ id: 'failed' }), row({ id: 'stale', available: false }), row({ id: 'live', provider: 'bedrock' })],
     { fallback: 'stale' }
   )
-  const result = await resolveDegradeSelection(plugin, { provider: 'anthropic', modelId: 'failed' })
+  const result = await resolveDegradeSelection(plugin, { provider: 'openrouter', modelId: 'failed' })
   t.equal(result?.modelId, 'live')
   t.end()
 })
