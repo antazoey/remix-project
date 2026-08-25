@@ -6,8 +6,7 @@
 
 import tape from 'tape'
 import {
-  resolveCodeCapableSelection,
-  resolveDegradeSelection
+  resolveCodeCapableSelection
 } from '../src/inferencers/deepagent/helpers/modelCatalog'
 import { resolveBedrockModelId, geoForRegion, ensureToolDescriptions } from '../src/inferencers/deepagent/providers/bedrock'
 import { SUPPORTED_TRANSPORTS, isSupportedTransport, getProviderAdapter } from '../src/inferencers/deepagent/providers'
@@ -93,47 +92,6 @@ tape('resolveCodeCapableSelection: survives assistantState being unavailable', a
   t.end()
 })
 
-tape('resolveDegradeSelection: never returns the model that just failed', async (t) => {
-  const plugin = mockPlugin([row({ id: 'failed' }), row({ id: 'other', provider: 'bedrock' })])
-  const result = await resolveDegradeSelection(plugin, { provider: 'openrouter', modelId: 'failed' })
-  t.equal(result?.modelId, 'other')
-  t.end()
-})
-
-tape('resolveDegradeSelection: prefers a different transport — the failing one is unhealthy', async (t) => {
-  const plugin = mockPlugin([
-    row({ id: 'failed', provider: 'openrouter', routeProvider: 'openrouter' }),
-    row({ id: 'same-route', provider: 'openrouter', routeProvider: 'openrouter' }),
-    row({ id: 'other-route', provider: 'bedrock' })
-  ])
-  const result = await resolveDegradeSelection(plugin, {
-    provider: 'openrouter', modelId: 'failed', routeProvider: 'openrouter'
-  })
-  t.equal(result?.modelId, 'other-route')
-  t.end()
-})
-
-tape('resolveDegradeSelection: skips unavailable rows and local models', async (t) => {
-  const plugin = mockPlugin([
-    row({ id: 'failed' }),
-    row({ id: 'locked', available: false }),
-    row({ id: 'ollama', provider: 'ollama' })
-  ])
-  const result = await resolveDegradeSelection(plugin, { provider: 'openrouter', modelId: 'failed' })
-  t.equal(result, null, 'a locked row and a local runtime are not viable fallbacks')
-  t.end()
-})
-
-tape('resolveDegradeSelection: ignores a task assignment naming an unavailable model', async (t) => {
-  const plugin = mockPlugin(
-    [row({ id: 'failed' }), row({ id: 'stale', available: false }), row({ id: 'live', provider: 'bedrock' })],
-    { fallback: 'stale' }
-  )
-  const result = await resolveDegradeSelection(plugin, { provider: 'openrouter', modelId: 'failed' })
-  t.equal(result?.modelId, 'live')
-  t.end()
-})
-
 tape('resolveBedrockModelId: rewrites the geo prefix to match the region', (t) => {
   t.equal(resolveBedrockModelId('us.anthropic.claude-sonnet-4', 'eu-west-1'), 'eu.anthropic.claude-sonnet-4')
   t.equal(resolveBedrockModelId('eu.anthropic.claude-sonnet-4', 'ap-southeast-2'), 'apac.anthropic.claude-sonnet-4')
@@ -180,5 +138,20 @@ tape('provider registry: exactly three transports, and brands are refused', (t) 
     t.throws(() => getProviderAdapter(brand as any), /is not a transport/, `${brand} is rejected by name`)
     t.equal(isSupportedTransport(brand as any), false)
   }
+  t.end()
+})
+
+tape('the harness never substitutes the model the user picked', (t) => {
+  // A run that fails is reported against the chosen model. Automatically
+  // re-running on a different one silently overrode a deliberate choice —
+  // and because the swap went through `updateAgentModel`, which reassigns
+  // `this.modelSelection`, it persisted into every later turn while the
+  // picker still displayed the original.
+  const source = require('fs').readFileSync(
+    require('path').join(__dirname, '../src/inferencers/deepagent/DeepAgentInferencer.ts'),
+    'utf8'
+  )
+  t.equal(source.includes('tryDegradeAfterFailure'), false, 'no automatic degrade path')
+  t.equal(source.includes('DEGRADABLE_ERRORS'), false, 'no degradable-error set')
   t.end()
 })

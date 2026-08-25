@@ -72,29 +72,3 @@ export async function resolveCodeCapableSelection(
   const chosen = sameTransport ?? candidates[0]
   return chosen ? toSelection(chosen) : null
 }
-
-/**
- * A different model to degrade to after retries are exhausted.
- *
- * Order: the backend's `fallback` task assignment → any available
- * code-capable row that is NOT the one that just failed, preferring a
- * different transport (the failing one is the thing that is unhealthy).
- */
-export async function resolveDegradeSelection(
-  plugin: Plugin,
-  failed: ModelSelection
-): Promise<ModelSelection | null> {
-  const catalog = await syncModelCatalog(plugin)
-  if (!catalog.length) return null
-
-  const assigned = await selectionForTask(plugin, catalog, 'fallback')
-  if (assigned && assigned.modelId !== failed.modelId) return assigned
-
-  const failedTransport = failed.routeProvider ?? failed.provider
-  const candidates = catalog.filter(
-    (m) => m.available && m.id !== failed.modelId && modelSupportsCodeGeneration(m) && m.provider !== 'ollama'
-  )
-  const otherTransport = candidates.find((m) => modelTransportProvider(m) !== failedTransport)
-  const chosen = otherTransport ?? candidates[0]
-  return chosen ? toSelection(chosen) : null
-}

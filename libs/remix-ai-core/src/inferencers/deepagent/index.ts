@@ -135,6 +135,5 @@ export {
 
 export {
   syncModelCatalog,
-  resolveCodeCapableSelection,
-  resolveDegradeSelection
+  resolveCodeCapableSelection
 } from './helpers/modelCatalog'

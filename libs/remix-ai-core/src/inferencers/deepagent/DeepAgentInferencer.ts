@@ -31,7 +31,7 @@ import { RemixDeepAgentMiddleware } from './deepAgentMiddleWare'
 
 import './AsyncLocalStorageInit'
 import { createModelInstance } from './ModelFactory'
-import { resolveCodeCapableSelection, resolveDegradeSelection, syncModelCatalog } from './helpers/modelCatalog'
+import { resolveCodeCapableSelection, syncModelCatalog } from './helpers/modelCatalog'
 import { generateStructured } from '../../helpers/structuredOutput'
 import { SecurityCheckSchema } from '../../types/schemas'
 import { getLangfuseCallbackHandler, flushLangfuse } from '../../helpers/langfuse'
@@ -63,8 +63,6 @@ export class DeepAgentInferencer implements ICompletions, IGeneration {
   private tools: DynamicStructuredTool[] = []
   private approvalGate: ToolApprovalGate | undefined
   private currentAbortController: AbortController | null = null
-  /** One degrade-to-another-model attempt per answer() — never a loop. */
-  private degradeAttempted = false
   /** Model-independent agent pieces, built once and reused across model swaps. */
   private checkpointer: IndexedDBCheckpointSaver | null = null
   private hasSkillsPermission: boolean | null = null
@@ -420,7 +418,6 @@ export class DeepAgentInferencer implements ICompletions, IGeneration {
 
   async answer(prompt: string, params: IParams, context?: string): Promise<string> {
     this.event.emit('onInference')
-    this.degradeAttempted = false
 
     try {
       if (!this.agent) {
@@ -484,17 +481,6 @@ export class DeepAgentInferencer implements ICompletions, IGeneration {
           this.event.emit('onInferenceDone')
           remixAILogger.log('[DeepAgentInferencer] Answer request was cancelled')
           return ''
-        }
-
-        // The transport already retried anything retryable (see
-        // retryTransport). Reaching here with a provider-health failure means
-        // that provider is down for us right now, so degrade to another model
-        // once rather than losing the turn. Tried at most once per answer().
-        const degraded = await this.tryDegradeAfterFailure(error, messages)
-        if (degraded !== null) {
-          this.event.emit('onStreamComplete', degraded)
-          this.event.emit('onInferenceDone')
-          return degraded
         }
 
         this.event.emit('onInferenceDone')
@@ -1059,63 +1045,6 @@ export class DeepAgentInferencer implements ICompletions, IGeneration {
       remixAILogger.log(`[DeepAgentInferencer] Recreated agent with ${selectedTools.length} selected tools`)
     } catch (error) {
       remixAILogger.error('[DeepAgentInferencer] Failed to recreate agent with selected tools:', error)
-    }
-  }
-
-  /**
-   * Error classes worth moving to a different model for. These are all
-   * "this provider is unhealthy or closed to us right now" — a different
-   * model on a different transport plausibly succeeds. Anything about the
-   * *request* (invalid request, context length, tool failure) would fail
-   * identically elsewhere, and auth problems are the user's to fix.
-   */
-  private static readonly DEGRADABLE_ERRORS: ReadonlySet<DeepAgentErrorType> = new Set([
-    DeepAgentErrorType.MODEL_OVERLOADED,
-    DeepAgentErrorType.SERVICE_UNAVAILABLE,
-    DeepAgentErrorType.SERVER_ERROR,
-    DeepAgentErrorType.RATE_LIMIT_EXCEEDED,
-    DeepAgentErrorType.QUOTA_EXCEEDED
-  ])
-
-  /**
-   * Re-run once on a different model after the transport's retries are spent.
-   * Returns the response on success, or null when degrading doesn't apply —
-   * in which case the caller proceeds with normal error reporting.
-   */
-  private async tryDegradeAfterFailure(error: any, messages: any[]): Promise<string | null> {
-    if (this.degradeAttempted) return null
-    const { type } = classifyApiError(error)
-    if (!DeepAgentInferencer.DEGRADABLE_ERRORS.has(type)) return null
-
-    this.degradeAttempted = true
-    const failed = this.modelSelection
-    let target: ModelSelection | null = null
-    try {
-      target = await resolveDegradeSelection(this.plugin, failed)
-    } catch (e) {
-      remixAILogger.warn('[DeepAgentInferencer] degrade: catalogue lookup failed', e)
-    }
-    if (!target) {
-      remixAILogger.log(`[DeepAgentInferencer] degrade: no alternative model for ${failed.modelId} (${type})`)
-      return null
-    }
-
-    remixAILogger.warn(`[DeepAgentInferencer] ${failed.modelId} failed with ${type} — degrading to ${target.modelId}`)
-    this.event.emit('onModelDegraded', {
-      from: failed,
-      to: target,
-      errorType: type,
-      timestamp: Date.now()
-    })
-
-    try {
-      await this.updateAgentModel(target)
-      return await this.runAgent(messages)
-    } catch (retryError: any) {
-      remixAILogger.error('[DeepAgentInferencer] degrade attempt also failed:', retryError)
-      // Report the *original* failure — the user picked that model, and the
-      // fallback's error would be confusing noise about a model they never chose.
-      return null
     }
   }
 
