@@ -1062,7 +1062,7 @@ export class Blockchain extends Plugin {
           const auth = await this.call('auth', 'getCredits')
           if (auth && auth.balance > creditThreshold) {
 
-            let resolved: CompilerAbstract = await this.call('compilerArtefacts', 'getCompilerAbstractByContractName', args.data.contractName)
+            const resolved: CompilerAbstract = await this.call('compilerArtefacts', 'getCompilerAbstractByContractName', args.data.contractName)
             const sources = resolved.getSourceCode()
             let source = ''
             if (sources.target) {
