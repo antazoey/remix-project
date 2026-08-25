@@ -134,13 +134,11 @@ module.exports = {
     browser
       // clone https://github.com/yann300/remix-reward
       .clickLaunchIcon('filePanel')
-      .waitForElementVisible('[data-id="github-dropdown-toggle"]')
-      .click('[data-id="github-dropdown-toggle"]')
-      .waitForElementVisible('[data-id="github-dropdown-item-clone"]')
-      .click('[data-id="github-dropdown-item-clone"]')
-      .waitForElementVisible('[data-id="topbarModalModalDialogModalBody-react"]')
-      .click('[data-id="topbarModalModalDialogModalBody-react"]')
+      .waitForElementVisible('[data-id="landingPageImportFromGitHubButton"]')
+      .click('[data-id="landingPageImportFromGitHubButton"]')
+      .waitForElementVisible('[data-id="fileSystemModalDialogContainer-react"]')
       .waitForElementVisible('[data-id="modalDialogCustomPromptTextClone"]')
+      .click('[data-id="modalDialogCustomPromptTextClone"]')
       .setValue('[data-id="modalDialogCustomPromptTextClone"]', 'https://github.com/remix-project-org/remix-reward')
       .click('[data-id="topbarModal-modal-footer-ok-react"]')
       .waitForElementPresent('.fa-spinner')
