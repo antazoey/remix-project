@@ -51,7 +51,7 @@ const RenderCall = ({ tx, resolvedData, logs, index, plugin, showTableHash, txDe
           </div>
         </span>
         <div className="remix_ui_terminal_buttons">
-          <div className="remix_ui_terminal_debug btn btn-primary btn-sm" style={{padding:'.05rem .25rem', fontSize:'12px', fontWeight:700, fontFamily:'var(--bs-font-sans-serif)'}} onClick={(event) => debug(event, tx)}>
+          <div className="remix_ui_terminal_debug btn btn-primary btn-sm" style={{ padding:'.05rem .25rem', fontSize:'12px', fontWeight:700, fontFamily:'var(--bs-font-sans-serif)' }} onClick={(event) => debug(event, tx)}>
             <FormattedMessage id="terminal.debug" />
           </div>
         </div>

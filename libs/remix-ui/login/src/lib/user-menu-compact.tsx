@@ -126,7 +126,7 @@ export const UserMenuCompact: React.FC<UserMenuCompactProps> = ({
         {planGroup && planBadgeConfig && (
           <span className={`feature-badge user-menu-compact-plan-tag ${planBadgeConfig.colorClass}`}>
             {/* <i className={`${planBadgeConfig.icon} feature-badge-icon`}></i> */}
-            <span className="feature-badge-name" style={{fontSize:"10px", fontWeight:'700', lineHeight:'normal'}}>{planGroup.display_name}</span>
+            <span className="feature-badge-name" style={{ fontSize:"10px", fontWeight:'700', lineHeight:'normal' }}>{planGroup.display_name}</span>
           </span>
         )}
       </button>

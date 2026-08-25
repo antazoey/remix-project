@@ -914,7 +914,7 @@ export function RemixUiTopbar() {
                 <CustomTooltip placement="bottom" tooltipText="Check out the features in Remix Pro : Security & Gas Audits, the Code Helper, Web3 API connectors (the Graph, Etherscan, Alchemy) and more!">
                   <span
                     className="btn btn-sm d-flex align-items-center gap-1 text-nowrap"
-                    style={{ cursor: 'pointer', padding: '0.25rem 0.6rem' , border: "1px solid color-mix(in srgb, var(--custom-primary) 64%, transparent)", color: 'var(--custom-primary)', fontSize:"12px", fontWeight:'700', lineHeight:'normal'}}
+                    style={{ cursor: 'pointer', padding: '0.25rem 0.6rem' , border: "1px solid color-mix(in srgb, var(--custom-primary) 64%, transparent)", color: 'var(--custom-primary)', fontSize:"12px", fontWeight:'700', lineHeight:'normal' }}
                     onClick={() => {
                       try { plugin.call('planManager', 'open', 'plans') } catch { /* plugin not ready */ }
                       trackMatomoEvent({ category: 'topbar', action: 'upgrade', name: 'Upgrade', isClick: true })
