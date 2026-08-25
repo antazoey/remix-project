@@ -144,6 +144,45 @@ export function findModel(
   return list.find(m => m.id === id)
 }
 
+const MODEL_TRANSPORTS: ReadonlySet<string> = new Set<ModelTransport>(['openrouter', 'bedrock', 'ollama'])
+
+/**
+ * Normalise the backend's `provider` onto a transport.
+ *
+ * The field is a plain string on the wire, so the `ModelTransport` type buys
+ * nothing at runtime. A payload still naming a vendor brand ('anthropic',
+ * 'openai', 'mistralai', 'moonshot', …) would otherwise flow through
+ * untouched — `curateOpenRouterBrandedModels` only rewrites rows already
+ * marked `openrouter`, so the row would reach `getProviderAdapter` with a
+ * brand and throw, failing every prompt.
+ *
+ * Those brands are exactly the ones OpenRouter routes, so map them there and
+ * pin the transport explicitly.
+ */
+function normalizeTransport(
+  provider: string,
+  routeProvider?: unknown
+): { provider: ModelProvider; routeProvider?: ModelTransport } {
+  // An explicit, valid route from the backend always wins.
+  if (typeof routeProvider === 'string' && MODEL_TRANSPORTS.has(routeProvider)) {
+    return {
+      provider: (MODEL_TRANSPORTS.has(provider) ? provider : routeProvider) as ModelProvider,
+      routeProvider: routeProvider as ModelTransport
+    }
+  }
+  if (MODEL_TRANSPORTS.has(provider)) return { provider: provider as ModelProvider }
+  return { provider: 'openrouter', routeProvider: 'openrouter' }
+}
+
+function finiteNumber(value: any): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function positiveNumber(value: any): number | undefined {
+  const n = finiteNumber(value)
+  return n !== undefined && n > 0 ? n : undefined
+}
+
 /**
  * Parse the `ai_models` array from a /permissions response into the
  * client-side AIModel shape. Returns null when the field is missing.
@@ -154,15 +193,6 @@ export function findModel(
  *     sort_order
  *   }
  */
-function finiteNumber(value: any): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
-}
-
-function positiveNumber(value: any): number | undefined {
-  const n = finiteNumber(value)
-  return n !== undefined && n > 0 ? n : undefined
-}
-
 export function parseAIModelsFromPermissions(permissions: any): AIModel[] | null {
   const raw = permissions?.ai_models
   if (!Array.isArray(raw)) return null
@@ -170,7 +200,7 @@ export function parseAIModelsFromPermissions(permissions: any): AIModel[] | null
     .filter((m: any) => m && typeof m.id === 'string' && typeof m.provider === 'string')
     .map((m: any): AIModel => ({
       id: m.id,
-      provider: m.provider,
+      ...normalizeTransport(m.provider, m.route_provider ?? m.routeProvider),
       displayName: m.display_name ?? m.id,
       description: m.description ?? '',
       category: (m.category ?? 'general') as AIModel['category'],

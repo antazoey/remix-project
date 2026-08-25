@@ -3,33 +3,10 @@ import { remixAILogger } from '../../helpers/logger'
 import { DeepAgentErrorType } from '../../types/deepagent'
 import { classifyApiError } from './ApiErrorHandler'
 
-/**
- * Retry for model transports.
- *
- * `classifyApiError` has always computed `retryable` / `retryAfter`, but every
- * call site forwarded that straight to the user as a failed turn while the
- * SDKs were constructed with `maxRetries: 0`. A single 429 or a transient
- * `overloaded` therefore killed the run. This wraps `fetch` so the retry
- * decision is taken in exactly one place, using that same classification.
- *
- * Retry lives at the transport rather than in each SDK so that:
- *   - the model stays a real `BaseChatModel` (deepagents needs `bindTools`,
- *     which `Runnable.withRetry()` would strip), and
- *   - every provider gets identical semantics, including retry-after honouring.
- *
- * Providers with no injectable fetch (Bedrock, Ollama) get the SDK's own
- * `maxRetries` set to the same attempt budget instead.
- */
-
 export interface RetryPolicy {
-  /** Total attempts including the first. 3 → one initial call + 2 retries. */
   maxAttempts: number
-  /** Exponential backoff base. */
   baseDelayMs: number
-  /** Ceiling for computed backoff. */
   maxDelayMs: number
-  /** Ceiling for a server-supplied Retry-After; beyond this we give up now
-   *  rather than freeze the UI waiting out a long cooldown. */
   maxRetryAfterMs: number
 }
 
@@ -52,11 +29,6 @@ export interface RetryAttemptInfo {
 /** Emits `retry` with a RetryAttemptInfo, so the UI can say "retrying…". */
 export const retryEvents = new EventEmitter()
 
-/**
- * Error classes that are worth another attempt but which the *client* should
- * not sit on for long. Quota / auth / invalid-request are never retried —
- * `classifyApiError` already marks them non-retryable.
- */
 function isRetryableType(type: DeepAgentErrorType): boolean {
   switch (type) {
   case DeepAgentErrorType.RATE_LIMIT_EXCEEDED:
@@ -110,11 +82,6 @@ function isAbort(error: any): boolean {
   return error?.name === 'AbortError' || error?.code === 20 || /abort/i.test(error?.message || '')
 }
 
-/**
- * Build a pseudo-error from a failed response so the *same* classifier that
- * drives the user-facing message drives the retry decision. The body is read
- * from a clone, leaving the original response intact for the caller.
- */
 async function classifyResponse(response: Response) {
   let body = ''
   try {

@@ -21,6 +21,7 @@ import {
   parseRetryAfterHeader
 } from '../src/inferencers/deepagent/retryTransport'
 import { DeepAgentErrorType } from '../src/types/deepagent'
+import { getProviderAdapter } from '../src/inferencers/deepagent/providers'
 import {
   AIModel,
   isAutoModelId,
@@ -313,5 +314,69 @@ tape('classifyApiError: a timeout abort is retryable, a user abort is not misrea
   t.equal(classifyApiError({ name: 'TimeoutError', message: 'Agent run exceeded 300000ms.' }).type,
     DeepAgentErrorType.REQUEST_TIMEOUT)
   t.equal(classifyApiError({ name: 'TimeoutError', message: 'Agent run exceeded 300000ms.' }).retryable, true)
+  t.end()
+})
+
+tape('parseAIModelsFromPermissions: a vendor brand from the backend is routed, never left as a transport', (t) => {
+  // The wire field is a plain string, so the ModelTransport type does nothing
+  // at runtime. A brand left untouched reaches getProviderAdapter and throws,
+  // which fails every prompt — including a plain "hello".
+  const parsed = parseAIModelsFromPermissions({
+    ai_models: [
+      { id: 'anthropic/claude-sonnet-5', provider: 'anthropic' },
+      { id: 'gpt-5', provider: 'openai' },
+      { id: 'kimi', provider: 'moonshot' },
+      { id: 'weird', provider: 'some-new-vendor' }
+    ]
+  })!
+  for (const row of parsed) {
+    t.equal(row.provider, 'openrouter', `${row.id} is branded onto the router`)
+    t.equal(row.routeProvider, 'openrouter', `${row.id} carries an explicit transport`)
+  }
+  t.end()
+})
+
+tape('parseAIModelsFromPermissions: real transports pass through untouched', (t) => {
+  const parsed = parseAIModelsFromPermissions({
+    ai_models: [
+      { id: 'a', provider: 'openrouter' },
+      { id: 'b', provider: 'bedrock' },
+      { id: 'c', provider: 'ollama' }
+    ]
+  })!
+  t.deepEqual(parsed.map((m) => m.provider), ['openrouter', 'bedrock', 'ollama'])
+  t.equal(parsed[1].routeProvider, undefined, 'bedrock needs no route rewrite')
+  t.end()
+})
+
+tape('parseAIModelsFromPermissions: an explicit backend route_provider wins', (t) => {
+  const parsed = parseAIModelsFromPermissions({
+    ai_models: [
+      { id: 'x', provider: 'anthropic', route_provider: 'bedrock' },
+      { id: 'y', provider: 'openrouter', route_provider: 'nonsense' }
+    ]
+  })!
+  t.equal(parsed[0].routeProvider, 'bedrock', 'a valid explicit route is honoured')
+  t.equal(parsed[0].provider, 'bedrock', 'and the brand follows it')
+  t.equal(parsed[1].provider, 'openrouter', 'an invalid route falls back to the provider')
+  t.end()
+})
+
+tape('every parsed row resolves to a real adapter', (t) => {
+  // The end-to-end guarantee: whatever /permissions sends, ModelFactory can
+  // build it. This is the invariant whose absence broke "hello".
+  const parsed = parseAIModelsFromPermissions({
+    ai_models: [
+      { id: 'a', provider: 'anthropic' },
+      { id: 'b', provider: 'mistralai' },
+      { id: 'c', provider: 'bedrock' },
+      { id: 'd', provider: 'ollama' },
+      { id: 'e', provider: 'totally-unknown' }
+    ]
+  })!
+  for (const row of parsed) {
+    const transport = row.routeProvider ?? row.provider
+    t.doesNotThrow(() => getProviderAdapter(transport), `${row.id} → ${transport} builds`)
+  }
   t.end()
 })
