@@ -20,7 +20,7 @@ import { IndexedDBChatHistoryBackend } from './storage/indexedDBBackend'
 import { WeightedToolSelector, IChatMessage } from './services/weightedToolSelector'
 import { remixAILogger, setRemixAILoggingEnabled, isRemixAILoggingEnabled } from './helpers/logger'
 import { generateStructured } from './helpers/structuredOutput'
-import { modelSupportsCodeGeneration, isAutoModelId } from './types/models'
+import { modelSupportsCodeGeneration, modelSupportsToolCalling, isAutoModelId, modelVendor, MODEL_SECTIONS } from './types/models'
 import { SecurityCheckSchema, GeneratedFileSchema, GeneratedProjectSchema, WorkspaceEditSchema } from './types/schemas'
 export {
   ChatCommandParser,
@@ -36,10 +36,10 @@ export {
   WeightedToolSelector, IChatMessage,
   remixAILogger, setRemixAILoggingEnabled, isRemixAILoggingEnabled,
   generateStructured, SecurityCheckSchema, GeneratedFileSchema, GeneratedProjectSchema, WorkspaceEditSchema,
-  modelSupportsCodeGeneration, isAutoModelId
+  modelSupportsCodeGeneration, modelSupportsToolCalling, isAutoModelId, modelVendor, MODEL_SECTIONS
 }
 
-export type { ByokKeyState } from './types/models'
+export type { ByokKeyState, ModelSection } from './types/models'
 export * from './types/types'
 export * from './types/mcp'
 export * from './helpers/streamHandler'
@@ -47,6 +47,7 @@ export * from './helpers/apiKeyValidator'
 export * from './helpers/logger'
 export * from './helpers/langfuse'
 export * from './helpers/modelTelemetry'
+export * from './helpers/conversationTitle'
 export * from './agents/codeExplainAgent'
 export * from './agents/completionAgent'
 export * from './agents/securityAgent'

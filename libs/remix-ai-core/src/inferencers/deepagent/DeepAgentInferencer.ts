@@ -30,11 +30,12 @@ import type { DeepAgent } from 'deepagents'
 import { RemixDeepAgentMiddleware } from './deepAgentMiddleWare'
 
 import './AsyncLocalStorageInit'
-import { createModelInstance } from './ModelFactory'
+import { createModelInstance, modelInstanceSupportsTools } from './ModelFactory'
 import { resolveCodeCapableSelection, syncModelCatalog } from './helpers/modelCatalog'
 import { generateStructured } from '../../helpers/structuredOutput'
 import { SecurityCheckSchema } from '../../types/schemas'
 import { getLangfuseCallbackHandler, flushLangfuse } from '../../helpers/langfuse'
+import { setCurrentSessionId } from './helpers/runContext'
 import { buildSubagentConfigs } from './SubagentConfig'
 import { StreamEventHandler } from './StreamEventHandler'
 import { CONVERSATION_THREAD_PREFIX, DAPP_MAX_TOKENS } from '@remix/remix-ai-core'
@@ -663,6 +664,10 @@ export class DeepAgentInferencer implements ICompletions, IGeneration {
         )
       }
 
+      // Identity for this run: Langfuse traces and the OpenRouter
+      // `session_id` / `user` fields both key off it.
+      setCurrentSessionId(this.sessionThreadId)
+
       // Attach Langfuse tracing (no-op when disabled/unconfigured).
       const langfuseHandler = await getLangfuseCallbackHandler({
         sessionId: this.sessionThreadId,
@@ -1019,15 +1024,35 @@ export class DeepAgentInferencer implements ICompletions, IGeneration {
         let fallbackModel = this.model
         const codeCapable = await resolveCodeCapableSelection(this.plugin, this.modelSelection)
         if (codeCapable) {
-          fallbackModel = await createModelInstance(codeCapable, DAPP_MAX_TOKENS, this.userApiKeys)
-          remixAILogger.log(`[DeepAgentInferencer] Subagents use ${codeCapable.modelId} (route=${codeCapable.routeProvider ?? codeCapable.provider}); ${this.modelSelection.modelId} is not advertised as code-capable`)
+          const candidate = await createModelInstance(codeCapable, DAPP_MAX_TOKENS, this.userApiKeys)
+          // Subagents bind tools on every request. A code-capable model that
+          // cannot call them fails each one with OpenRouter's
+          // `404 No endpoints found that support tool use`, naming whichever
+          // tool happens to come first — so keep the user's model instead.
+          if (modelInstanceSupportsTools(candidate)) {
+            fallbackModel = candidate
+            remixAILogger.log(`[DeepAgentInferencer] Subagents use ${codeCapable.modelId} (route=${codeCapable.routeProvider ?? codeCapable.provider}); ${this.modelSelection.modelId} is not advertised as code-capable`)
+          } else {
+            remixAILogger.warn(`[DeepAgentInferencer] ${codeCapable.modelId} cannot call tools — subagents stay on ${this.modelSelection.modelId}`)
+          }
         }
-        agentConfig.subagents = await buildSubagentConfigs(
-          this.tools,
-          this.model,
-          this.filesystemBackend,
-          fallbackModel
-        )
+        // A subagent that cannot be built must not take the whole agent with
+        // it. Losing one specialist costs a capability; losing the agent means
+        // every prompt fails with "DeepAgent not initialized" and no cause.
+        try {
+          agentConfig.subagents = await buildSubagentConfigs(
+            this.tools,
+            this.model,
+            this.filesystemBackend,
+            fallbackModel
+          )
+        } catch (subagentError) {
+          remixAILogger.error(
+            '[DeepAgentInferencer] Subagent configuration failed — continuing without subagents:',
+            subagentError
+          )
+          agentConfig.subagents = []
+        }
         let subagentsDesc = ''
         agentConfig.subagents.forEach(sub => {
           subagentsDesc += `\n- ${sub.name}:${sub.description || ''}`
@@ -1045,6 +1070,14 @@ export class DeepAgentInferencer implements ICompletions, IGeneration {
       remixAILogger.log(`[DeepAgentInferencer] Recreated agent with ${selectedTools.length} selected tools`)
     } catch (error) {
       remixAILogger.error('[DeepAgentInferencer] Failed to recreate agent with selected tools:', error)
+      // Swallowing this left `this.agent` null, so the next prompt failed with
+      // "DeepAgent not initialized" — a message that describes the symptom and
+      // hides the cause. Surface the real failure to the caller instead.
+      throw new DeepAgentError(
+        `Failed to build the agent: ${(error as any)?.message ?? error}`,
+        DeepAgentErrorType.INITIALIZATION_FAILED,
+        error
+      )
     }
   }
 

@@ -1859,15 +1859,20 @@ export const RemixUiRemixAiAssistant = React.forwardRef<
 
         remixAILogger.log('Received response from plugin:', response)
 
+        if (response === null || response === undefined) {
+          setIsStreaming(false)
+          streamingAssistantIdRef.current = null
+          abortControllerRef.current = null
+          const notice = await props.plugin.call('assistantState' as any, 'getChatNotice').catch(() => null)
+          setChatNotice(notice ?? {
+            title: 'Request not sent',
+            body: 'The assistant declined this request. Check your plan, sign-in state or any cooldown shown above.'
+          } as any)
+          return
+        }
+
         // Handle langchain/deepagent mode: response is plain text
         if (typeof response === 'string') {
-          // The DeepAgent path now awaits runAgent (so withAssistantGate
-          // can see envelope errors). That means by the time `answer()`
-          // returns, the entire stream has already played out via
-          // onStreamResult/onStreamComplete and the bubble is fully
-          // painted. Skip the legacy create-bubble-from-final-text branch
-          // — otherwise we paint the response a second time below the
-          // streaming bubble.
           if (streamConsumedThisTurnRef.current) {
             setIsStreaming(false)
             streamingAssistantIdRef.current = null
@@ -2097,6 +2102,16 @@ export const RemixUiRemixAiAssistant = React.forwardRef<
           )
           streamingAssistantIdRef.current = null
         }
+      }
+      finally {
+        // Refine the sidebar title now that the turn is over. This used to run
+        // *before* the request as a fire-and-forget model call, racing the
+        // user's own prompt for the same model and quota. It only relabels a
+        // row that already shows the prompt's first 50 characters, so it has
+        // no business on the critical path.
+        try {
+          await props.plugin.call('remixaiassistant' as any, 'refineQueuedConversationTitle')
+        } catch { /* cosmetic — never let a title failure surface to the user */ }
       }
     },
     [isStreaming, props.plugin, selectedModel, assistantChoice, dismissChatNotice]

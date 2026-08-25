@@ -1,6 +1,6 @@
 import type { Plugin } from '@remixproject/engine'
 import { remixAILogger } from '../../../helpers/logger'
-import { AIModel, modelSupportsCodeGeneration, modelTransportProvider } from '../../../types/models'
+import { AIModel } from '../../../types/models'
 import { ModelSelection } from '../../../types/deepagent'
 import { setModelCatalog } from '../modelParams'
 
@@ -45,13 +45,13 @@ async function selectionForTask(plugin: Plugin, catalog: AIModel[], taskId: stri
 }
 
 /**
- * A model fit to write code, for the subagents.
+ * The backend's explicit `code_generation` assignment, for the subagents —
+ * or null, meaning "keep the model you already have".
  *
- * Order: the backend's `code_generation` task assignment → the current
- * selection if it is itself code-capable → any available code-capable row,
- * preferring one on the same transport so the request path is unchanged.
- * Returns null when nothing qualifies; the caller then keeps its own model
- * rather than substituting a guess.
+ * Only an assignment can displace the user's selection, and only when the
+ * catalogue backs it with tool support and an id the transport can address.
+ * Nothing here searches the catalogue for a replacement: a row good enough to
+ * pick out of a list is not the same as a row that works.
  */
 export async function resolveCodeCapableSelection(
   plugin: Plugin,
@@ -60,15 +60,38 @@ export async function resolveCodeCapableSelection(
   const catalog = await syncModelCatalog(plugin)
   if (!catalog.length) return null
 
+  // A substitute is only ever an improvement on paper: the user's own model is
+  // the one the main agent is demonstrably running. Two rounds of this picking
+  // an arbitrary `candidates[0]` — an 8B roleplay model, then an id OpenRouter
+  // does not publish — say the catalogue cannot be mined for a replacement.
+  // So: honour an explicit backend assignment, and otherwise change nothing.
+  const advertises = (m: AIModel | undefined, ...names: string[]) =>
+    Array.isArray(m?.capabilities) && m.capabilities.some((c) => names.includes(c))
+
+  // Subagents bind tools on every request, so an assignment that cannot call
+  // them breaks every specialist it is handed to.
   const assigned = await selectionForTask(plugin, catalog, 'code_generation')
-  if (assigned) return assigned
+  if (!assigned) return null
 
-  const currentRow = catalog.find((m) => m.id === current.modelId)
-  if (currentRow && modelSupportsCodeGeneration(currentRow)) return null
+  const assignedRow = catalog.find((m) => m.id === assigned.modelId)
+  if (!advertises(assignedRow, 'tools', 'tool_use', 'function_calling')) {
+    remixAILogger.warn(
+      `[modelCatalog] task 'code_generation' names ${assigned.modelId}, which does not advertise tool calling — ` +
+      `subagents stay on ${current.modelId}`
+    )
+    return null
+  }
 
-  const currentTransport = current.routeProvider ?? current.provider
-  const candidates = catalog.filter((m) => m.available && modelSupportsCodeGeneration(m))
-  const sameTransport = candidates.find((m) => modelTransportProvider(m) === currentTransport)
-  const chosen = sameTransport ?? candidates[0]
-  return chosen ? toSelection(chosen) : null
+  // OpenRouter addresses models as `vendor/slug`. A bare id is Remix-internal
+  // naming that reaches the provider as `400 not a valid model ID`.
+  if ((assigned.routeProvider ?? assigned.provider) === 'openrouter' && !assigned.modelId.includes('/')) {
+    remixAILogger.warn(
+      `[modelCatalog] task 'code_generation' names '${assigned.modelId}', which is not an OpenRouter vendor/slug id — ` +
+      `subagents stay on ${current.modelId}`
+    )
+    return null
+  }
+
+  remixAILogger.log(`[modelCatalog] subagents use the assigned ${assigned.modelId} instead of ${current.modelId}`)
+  return assigned
 }

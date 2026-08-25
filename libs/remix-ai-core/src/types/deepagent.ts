@@ -90,6 +90,7 @@ export enum DeepAgentErrorType {
   QUOTA_EXCEEDED = 'quota_exceeded',
   MODEL_OVERLOADED = 'model_overloaded',
   CONTENT_BLOCKED = 'content_blocked',
+  TOOL_USE_UNSUPPORTED = 'tool_use_unsupported',
   UNKNOWN = 'unknown'
 }
 

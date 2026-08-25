@@ -6,21 +6,6 @@ import { resolveModelParams, ResolvedModelParams } from './modelParams'
 import { getProviderAdapter } from './providers'
 import { onApiKeysChange } from './deepAgentSettingsEvents'
 
-/**
- * Model construction.
- *
- * This used to be a single switch carrying every provider's quirks inline,
- * a hardcoded token budget for all seven, and no caching — so a model switch
- * rebuilt a client from scratch every time. It is now three steps:
- *
- *   1. resolve the runtime parameters for the selection (backend-driven),
- *   2. look up the provider adapter,
- *   3. return a cached instance if one already matches.
- *
- * Provider-specific behaviour lives in `./providers/<name>.ts`.
- */
-
-/** Cheap non-cryptographic digest — never store a key in a cache key. */
 function fingerprint(value: string | undefined): string {
   if (!value) return '0'
   let h = 0
@@ -105,4 +90,18 @@ export async function createModelInstance(
 
   if (!options.fresh) pendingCache.set(key, build)
   return build
+}
+
+/**
+ * Whether a built model instance can call tools, per the provider SDK's own
+ * capability profile. Independent of the backend catalogue, which advertises
+ * `capabilities` by hand and can disagree with what the provider actually
+ * serves — a code-tuned model is routinely code-capable and tool-incapable at
+ * the same time, and binding tools to one fails the whole request.
+ *
+ * Permissive when the provider ships no profile (Bedrock, Ollama): silence is
+ * not evidence of missing support.
+ */
+export function modelInstanceSupportsTools(model: BaseChatModel): boolean {
+  return (model as any)?.profile?.toolCalling !== false
 }

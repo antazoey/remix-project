@@ -98,29 +98,10 @@ export const ANONYMOUS_PLACEHOLDER_MODEL: AIModel = {
   sortOrder: 0
 }
 
-/**
- * Anonymous users have no AI access — only the sign-in placeholder.
- * Ollama is gated by the `ai:ollama` feature; logged-out users don't
- * have any features, so they don't get Ollama either.
- */
 export const ANONYMOUS_FALLBACK_MODELS: AIModel[] = [
   ANONYMOUS_PLACEHOLDER_MODEL
 ]
 
-/**
- * NO bootstrap default model. The chat-default is whichever row the
- * backend marks `is_default: true` in `permissions.ai_models[]`. Read
- * it via `assistantState.getDefaultModel()` (or `selectDefaultModel(snap)`).
- *
- * If you find yourself wanting a literal model id here, you have a bug:
- *   - For "user just opened the app" → selectedModel should be `null`
- *     until /permissions resolves. Render a "Loading…" state.
- *   - For "task X needs model Y" → backend advertises that via
- *     `permissions.task_models[X]`. Read with `assistantState.getModelForTask('X')`.
- *   - For "Ollama / anonymous fallback" → ANONYMOUS_FALLBACK_MODELS.
- *
- * Anything else MUST throw rather than silently substitute.
- */
 export function getModelById(id: string, list: ReadonlyArray<AIModel> = ANONYMOUS_FALLBACK_MODELS): AIModel | undefined {
   return list.find(m => m.id === id)
 }
@@ -146,19 +127,6 @@ export function findModel(
 
 const MODEL_TRANSPORTS: ReadonlySet<string> = new Set<ModelTransport>(['openrouter', 'bedrock', 'ollama'])
 
-/**
- * Normalise the backend's `provider` onto a transport.
- *
- * The field is a plain string on the wire, so the `ModelTransport` type buys
- * nothing at runtime. A payload still naming a vendor brand ('anthropic',
- * 'openai', 'mistralai', 'moonshot', …) would otherwise flow through
- * untouched — `curateOpenRouterBrandedModels` only rewrites rows already
- * marked `openrouter`, so the row would reach `getProviderAdapter` with a
- * brand and throw, failing every prompt.
- *
- * Those brands are exactly the ones OpenRouter routes, so map them there and
- * pin the transport explicitly.
- */
 function normalizeTransport(
   provider: string,
   routeProvider?: unknown
@@ -183,16 +151,6 @@ function positiveNumber(value: any): number | undefined {
   return n !== undefined && n > 0 ? n : undefined
 }
 
-/**
- * Parse the `ai_models` array from a /permissions response into the
- * client-side AIModel shape. Returns null when the field is missing.
- *
- *   {
- *     id, provider, display_name, description, category, capabilities,
- *     is_default, requires_auth, required_feature, available, reason,
- *     sort_order
- *   }
- */
 export function parseAIModelsFromPermissions(permissions: any): AIModel[] | null {
   const raw = permissions?.ai_models
   if (!Array.isArray(raw)) return null
@@ -266,26 +224,31 @@ export const BYOK_API_KEY_SETTINGS: Partial<Record<ModelTransport, string>> = {
   openrouter: OPENROUTER_API_KEY_SETTING
 }
 
-/**
- * The transport that actually carries the request (route wins over brand).
- *
- * The return type stays the brand union because a row whose backend payload
- * omits `routeProvider` yields its brand here; `getProviderAdapter` rejects
- * that explicitly rather than guessing a transport for it.
- */
 export function modelTransportProvider(model: Pick<AIModel, 'provider' | 'routeProvider'>): AIModel['provider'] {
   return model.routeProvider ?? model.provider
 }
 
-/**
- * The catalogue's Auto Mode row, if the backend advertises one.
- *
- * `openrouter/auto` is a router pseudo-model, not something the proxy will
- * serve: selecting it as a static model produces
- * `403 Model 'openrouter/auto' is not available`. It means "let Auto Mode
- * pick", so callers must route it to the Auto Mode path instead of setting it
- * as the active model.
- */
+const DISPLAY_VENDORS: ReadonlySet<string> = new Set(['anthropic', 'openai', 'mistralai'])
+
+/** Vendor spellings that mean the same maker. */
+const VENDOR_ALIASES: Record<string, string> = {
+  mistral: 'mistralai'
+}
+
+/** The six sections the picker can show. */
+export const MODEL_SECTIONS = ['anthropic', 'openai', 'mistralai', 'openrouter', 'bedrock', 'ollama'] as const
+export type ModelSection = typeof MODEL_SECTIONS[number]
+
+export function modelVendor(model: Pick<AIModel, 'id' | 'provider' | 'routeProvider'>): ModelSection {
+  const transport = modelTransportProvider(model)
+  if (transport !== 'openrouter') return transport as ModelSection
+  const slashAt = model.id.indexOf('/')
+  if (slashAt <= 0) return 'openrouter'
+  const raw = model.id.slice(0, slashAt).toLowerCase()
+  const vendor = VENDOR_ALIASES[raw] ?? raw
+  return DISPLAY_VENDORS.has(vendor) ? (vendor as ModelSection) : 'openrouter'
+}
+
 export function isAutoModelId(id: string | undefined | null): boolean {
   if (!id) return false
   const normalized = id.toLowerCase()
@@ -293,16 +256,14 @@ export function isAutoModelId(id: string | undefined | null): boolean {
 }
 
 /**
- * Whether a model is fit to write code — the gate for subagent work.
- *
- * Read from the backend's `capabilities` array, never from a client-side
- * model-family list: those go stale the moment the catalogue moves, and a
- * new weak model ships as suitable until someone notices.
- *
- * A row with NO advertised capabilities is treated as suitable. Older
- * payloads send an empty array, and refusing every model there would break
- * subagents outright — the strictly worse failure.
+ * Whether a model can call tools.
  */
+export function modelSupportsToolCalling(model: Pick<AIModel, 'capabilities'> | undefined): boolean {
+  const caps = model?.capabilities
+  if (!Array.isArray(caps) || caps.length === 0) return true
+  return caps.some((c) => c === 'tools' || c === 'tool_use' || c === 'function_calling')
+}
+
 export function modelSupportsCodeGeneration(model: Pick<AIModel, 'capabilities'> | undefined): boolean {
   const caps = model?.capabilities
   if (!Array.isArray(caps) || caps.length === 0) return true
@@ -331,13 +292,6 @@ export function applyByokKeyPolicy(
 /** Whether a row runs on the user's own key, or is waiting for one. */
 export type ByokKeyState = 'own-key' | 'needs-key'
 
-/**
- * BYOK state of a single row, for display. A stored key is used for every row
- * on that transport (ModelFactory switches to the direct API as soon as one
- * exists), so key presence alone decides `own-key`. Rows the backend flagged
- * `require_api_key` have no proxy route, hence `needs-key` without one; the
- * rest keep running on the Remix proxy and get no badge at all.
- */
 export function byokKeyState(
   model: Pick<AIModel, 'provider' | 'routeProvider' | 'requireAPIKey'>,
   keyPresence: Partial<Record<AIModel['provider'], boolean>>
@@ -348,12 +302,6 @@ export function byokKeyState(
   return model.requireAPIKey ? 'needs-key' : undefined
 }
 
-/**
- * OpenRouter is the default router: a model is "routed" when it reaches the
- * vendor through another provider's transport. `curateOpenRouterBrandedModels`
- * is the only curation that sets one.
- *
- */
 export function isOpenRouterRouted(model: AIModel): boolean {
   return model.routeProvider === 'openrouter' || model.provider === 'openrouter'
 }
@@ -369,16 +317,6 @@ function prettifyOpenRouterId(id: string): string {
     .join(' ')
 }
 
-/**
- * OpenRouter rows: stamp the transport and make the display name readable.
- *
- * This used to also rebrand each row onto its vendor ('anthropic', 'openai',
- * 'mistralai', 'moonshot') so the picker could group by brand. Those brands
- * are gone — every hosted model reaches us through OpenRouter, so a brand
- * selected nothing and only invited code to switch on it as if it were a
- * transport. The model id is left untouched: OpenRouter requires the full
- * `vendor/slug`, which still carries the vendor for anyone displaying it.
- */
 export function curateOpenRouterBrandedModels(models: AIModel[]): AIModel[] {
   if (!Array.isArray(models) || models.length === 0) return models
   return models.map((model) => {

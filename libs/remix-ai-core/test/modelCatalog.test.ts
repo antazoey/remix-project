@@ -10,6 +10,7 @@ import {
 } from '../src/inferencers/deepagent/helpers/modelCatalog'
 import { resolveBedrockModelId, geoForRegion, ensureToolDescriptions } from '../src/inferencers/deepagent/providers/bedrock'
 import { SUPPORTED_TRANSPORTS, isSupportedTransport, getProviderAdapter } from '../src/inferencers/deepagent/providers'
+import { modelInstanceSupportsTools } from '../src/inferencers/deepagent/ModelFactory'
 import { AIModel } from '../src/types/models'
 
 function row(partial: Partial<AIModel>): AIModel {
@@ -19,7 +20,7 @@ function row(partial: Partial<AIModel>): AIModel {
     displayName: '',
     description: '',
     category: 'general',
-    capabilities: ['chat', 'code'],
+    capabilities: ['chat', 'code', 'tools'],
     isDefault: false,
     requiresAuth: false,
     requiredFeature: null,
@@ -40,42 +41,56 @@ function mockPlugin(models: AIModel[], taskModels: Record<string, string> = {}) 
   } as any
 }
 
-tape('resolveCodeCapableSelection: keeps the current model when it is code-capable', async (t) => {
-  const plugin = mockPlugin([row({ id: 'good', capabilities: ['chat', 'code'] })])
-  const result = await resolveCodeCapableSelection(plugin, { provider: 'openrouter', modelId: 'good' })
-  t.equal(result, null, 'null means "no substitution needed"')
+tape('resolveCodeCapableSelection: no task assignment means no substitution', async (t) => {
+  const plugin = mockPlugin([row({ id: 'openai/gpt-5', capabilities: ['chat', 'code']})])
+  const result = await resolveCodeCapableSelection(plugin, { provider: 'openrouter', modelId: 'openai/gpt-5' })
+  t.equal(result, null, 'null means "keep the model you already have"')
   t.end()
 })
 
-tape('resolveCodeCapableSelection: swaps out a model the backend says cannot code', async (t) => {
+tape('resolveCodeCapableSelection: never mines the catalogue for a replacement', async (t) => {
+  // The model the user picked is the one the main agent demonstrably runs.
+  // Searching the catalogue produced an 8B roleplay model, then an id
+  // OpenRouter does not publish — both broke every tool-bound subagent.
   const plugin = mockPlugin([
-    row({ id: 'weak', capabilities: ['chat'] }),
-    row({ id: 'strong', capabilities: ['chat', 'code'] })
+    row({ id: 'weak', capabilities: ['chat']}),
+    row({ id: 'aion-labs/aion-rp-llama-3.1-8b', capabilities: []}),
+    row({ id: 'anthropic/claude-sonnet-5', capabilities: ['chat', 'code', 'tools']})
   ])
   const result = await resolveCodeCapableSelection(plugin, { provider: 'openrouter', modelId: 'weak' })
-  t.equal(result?.modelId, 'strong')
+  t.equal(result, null, 'a model good enough to pick out of a list is not the same as one that works')
   t.end()
 })
 
 tape('resolveCodeCapableSelection: the backend task assignment wins', async (t) => {
   const plugin = mockPlugin(
-    [row({ id: 'weak', capabilities: ['chat'] }), row({ id: 'assigned' }), row({ id: 'other' })],
-    { code_generation: 'assigned' }
+    [row({ id: 'weak', capabilities: ['chat']}), row({ id: 'anthropic/claude-sonnet-5' }), row({ id: 'other' })],
+    { code_generation: 'anthropic/claude-sonnet-5' }
   )
   const result = await resolveCodeCapableSelection(plugin, { provider: 'openrouter', modelId: 'weak' })
-  t.equal(result?.modelId, 'assigned')
+  t.equal(result?.modelId, 'anthropic/claude-sonnet-5')
   t.end()
 })
 
-tape('resolveCodeCapableSelection: prefers a candidate on the same transport', async (t) => {
-  const plugin = mockPlugin([
-    row({ id: 'weak', capabilities: ['chat'], provider: 'bedrock' }),
-    row({ id: 'elsewhere', provider: 'openrouter', routeProvider: 'openrouter' }),
-    row({ id: 'same-route', provider: 'bedrock', routeProvider: 'bedrock' })
-  ])
-  const result = await resolveCodeCapableSelection(plugin, { provider: 'bedrock', modelId: 'weak' })
-  t.equal(result?.modelId, 'same-route', 'keeps the request path unchanged')
-  t.equal(result?.routeProvider, 'bedrock')
+tape('resolveCodeCapableSelection: an assignment without tool support is refused', async (t) => {
+  const plugin = mockPlugin(
+    [row({ id: 'weak', capabilities: ['chat']}), row({ id: 'x/coder', capabilities: ['chat', 'code']})],
+    { code_generation: 'x/coder' }
+  )
+  const result = await resolveCodeCapableSelection(plugin, { provider: 'openrouter', modelId: 'weak' })
+  t.equal(result, null, 'subagents bind tools on every request')
+  t.end()
+})
+
+tape('resolveCodeCapableSelection: an assignment with an unroutable id is refused', async (t) => {
+  // `claude-opus-4-6` is Remix-internal naming; OpenRouter answers
+  // `400 not a valid model ID` for anything that is not `vendor/slug`.
+  const plugin = mockPlugin(
+    [row({ id: 'weak', capabilities: ['chat']}), row({ id: 'claude-opus-4-6' })],
+    { code_generation: 'claude-opus-4-6' }
+  )
+  const result = await resolveCodeCapableSelection(plugin, { provider: 'openrouter', modelId: 'weak' })
+  t.equal(result, null, 'a bare id never reaches OpenRouter as a model')
   t.end()
 })
 
@@ -155,3 +170,34 @@ tape('the harness never substitutes the model the user picked', (t) => {
   t.equal(source.includes('DEGRADABLE_ERRORS'), false, 'no degradable-error set')
   t.end()
 })
+
+tape('resolveCodeCapableSelection: a code-capable row is not picked up unasked', async (t) => {
+  // Subagents are handed tools, and the catalogue's `capabilities` have proven
+  // unreliable in both directions — rows that claim tool support without it and
+  // rows that omit it while having it. Only an explicit assignment may swap.
+  const plugin = mockPlugin([
+    row({ id: 'weak', capabilities: ['chat']}),
+    row({ id: 'x/code-no-tools', capabilities: ['chat', 'code']}),
+    row({ id: 'x/code-and-tools', capabilities: ['chat', 'code', 'tools']})
+  ])
+  const result = await resolveCodeCapableSelection(plugin, { provider: 'openrouter', modelId: 'weak' })
+  t.equal(result, null, 'even a perfectly-advertised row waits to be assigned')
+  t.end()
+})
+
+tape('resolveCodeCapableSelection: keeps the current model when it can code AND call tools', async (t) => {
+  const plugin = mockPlugin([row({ id: 'good', capabilities: ['chat', 'code', 'tools']})])
+  const result = await resolveCodeCapableSelection(plugin, { provider: 'openrouter', modelId: 'good' })
+  t.equal(result, null)
+  t.end()
+})
+
+tape('modelInstanceSupportsTools: reads the provider SDK profile, permissive without one', (t) => {
+  t.equal(modelInstanceSupportsTools({ profile: { toolCalling: false } } as any), false,
+    'a code-tuned model with no tool endpoint must not be handed to a subagent')
+  t.equal(modelInstanceSupportsTools({ profile: { toolCalling: true } } as any), true)
+  t.equal(modelInstanceSupportsTools({ profile: {} } as any), true, 'an unprofiled model is not assumed broken')
+  t.equal(modelInstanceSupportsTools({} as any), true, 'Bedrock/Ollama ship no profile at all')
+  t.end()
+})
+

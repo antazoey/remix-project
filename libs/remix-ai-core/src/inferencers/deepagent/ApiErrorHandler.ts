@@ -44,10 +44,6 @@ export function classifyApiError(error: any): ApiErrorClassification {
     return { type: DeepAgentErrorType.AUTHENTICATION_FAILED, retryable: false }
   }
 
-  // 403 alone is not enough to claim the API key is invalid — the
-  // remix-api backend uses 403 for FEATURE_DENIED / EMAIL_NOT_VERIFIED /
-  // PROVIDER_DENIED, none of which are credential problems. Only flag
-  // it as such when the message text actually says so.
   if (message.includes('forbidden') || message.includes('permission denied') ||
       message.includes('invalid api key') || message.includes('expired api key')) {
     return { type: DeepAgentErrorType.API_KEY_INVALID, retryable: false }
@@ -67,6 +63,10 @@ export function classifyApiError(error: any): ApiErrorClassification {
     return { type: DeepAgentErrorType.TOOL_EXECUTION_FAILED, retryable: false }
   }
 
+  if (message.includes('no endpoints found that support tool use')) {
+    return { type: DeepAgentErrorType.TOOL_USE_UNSUPPORTED, retryable: false }
+  }
+
   // The backend's content filter. Terminal by definition — retrying or
   // degrading to another model sends the same prompt and gets the same answer.
   if (message.includes('prohibited_content') || message.includes('content_policy') ||
@@ -74,13 +74,7 @@ export function classifyApiError(error: any): ApiErrorClassification {
     return { type: DeepAgentErrorType.CONTENT_BLOCKED, retryable: false }
   }
 
-  // `message` is lower-cased above, so every needle here must be too —
-  // testing for 'ETIMEDOUT' against a lower-cased string never matched, which
-  // silently downgraded every socket-level failure to UNKNOWN (non-retryable).
   const code = typeof error?.code === 'string' ? error.code.toUpperCase() : ''
-  // `AbortSignal.timeout()` and our own run watchdog raise a DOMException named
-  // TimeoutError whose message need not contain the word "timeout", so the
-  // name has to be checked as well as the text.
   if (error?.name === 'TimeoutError' ||
       message.includes('timeout') || message.includes('timed out') || message.includes('etimedout') ||
       message.includes('esockettimedout') || code === 'ETIMEDOUT' || code === 'ESOCKETTIMEDOUT') {
@@ -123,10 +117,28 @@ export function extractRetryAfter(error: any): number {
   return 60
 }
 
+function toolUseUnsupportedMessage(error: any): string {
+  const raw: string =
+    error?.aiError?.message ??
+    error?.response?.data?.error?.message ??
+    error?.data?.error?.message ??
+    error?.message ??
+    ''
+  const named = /disabling\s+"([^"]+)"/i.exec(raw)?.[1]
+  const aside = named
+    ? ` (the provider suggested disabling "${named}" — that will not help; the assistant needs tools on every request.)`
+    : ''
+  return 'The selected model cannot call tools, which the assistant requires. ' +
+    `Choose a model that supports tool calling.${aside}`
+}
+
 export function getErrorMessage(errorType: DeepAgentErrorType, error: any, retryAfter?: number): string {
-  // Prefer a structured envelope message when one is available — the
-  // backend's text is always more accurate than our generic strings.
   remixAILogger.log('[Classified error:]', { errorType, error, retryAfter })
+
+  if (errorType === DeepAgentErrorType.TOOL_USE_UNSUPPORTED) {
+    return toolUseUnsupportedMessage(error)
+  }
+
   const envelopeMessage: string | undefined =
     error?.aiError?.message ??
     error?.response?.data?.error?.message ??
@@ -175,6 +187,7 @@ export function getErrorMessage(errorType: DeepAgentErrorType, error: any, retry
 
   case DeepAgentErrorType.CONTENT_BLOCKED:
     return 'This request was blocked by the content policy. Rephrase it and try again.'
+    // TOOL_USE_UNSUPPORTED is handled above, ahead of the envelope shortcut.
 
   case DeepAgentErrorType.REQUEST_TIMEOUT:
     return 'Request timed out. Please try again.'

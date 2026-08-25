@@ -1,6 +1,18 @@
 import { z } from 'zod'
 import { IMCPToolResult } from '../../../types/mcp'
 
+export function sanitizeToolName(name: string | undefined): string | null {
+  if (!name || typeof name !== 'string') return null
+  const cleaned = name
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]/g, '_')
+    .replace(/_{2,}/g, '_')
+    .replace(/^[_-]+/, '')
+    .slice(0, 64)
+    .replace(/[_-]+$/, '')
+  return cleaned.length > 0 ? cleaned : null
+}
+
 /**
  * Convert JSON Schema to Zod schema
  * @param schema - JSON Schema object
@@ -15,9 +27,12 @@ export function jsonSchemaToZod(schema: any): z.ZodObject<any> {
 
       switch (prop.type) {
       case 'string':
-        zodType = z.string()
+        if (Array.isArray(prop.enum) && prop.enum.length > 0 && prop.enum.every((v: any) => typeof v === 'string')) {
+          zodType = z.enum(prop.enum as [string, ...string[]])
+        } else {
+          zodType = z.string()
+        }
         if (prop.description) zodType = zodType.describe(prop.description)
-        if (prop.enum) zodType = z.enum(prop.enum)
         break
       case 'number':
         zodType = z.number()

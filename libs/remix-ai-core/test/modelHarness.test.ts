@@ -14,7 +14,8 @@ import {
 } from '../src/inferencers/deepagent/modelParams'
 import {
   classifyApiError,
-  extractRetryAfter
+  extractRetryAfter,
+  getErrorMessage
 } from '../src/inferencers/deepagent/ApiErrorHandler'
 import {
   withRetryingFetch,
@@ -25,7 +26,11 @@ import { getProviderAdapter } from '../src/inferencers/deepagent/providers'
 import {
   AIModel,
   isAutoModelId,
+  MODEL_SECTIONS,
   modelSupportsCodeGeneration,
+  modelSupportsToolCalling,
+  modelTransportProvider,
+  modelVendor,
   parseAIModelsFromPermissions
 } from '../src/types/models'
 
@@ -378,5 +383,98 @@ tape('every parsed row resolves to a real adapter', (t) => {
     const transport = row.routeProvider ?? row.provider
     t.doesNotThrow(() => getProviderAdapter(transport), `${row.id} → ${transport} builds`)
   }
+  t.end()
+})
+
+tape('modelVendor: the three called-out subsets group on their own', (t) => {
+  const rows = parseAIModelsFromPermissions({
+    ai_models: [
+      { id: 'anthropic/claude-sonnet-5', provider: 'openrouter' },
+      { id: 'openai/gpt-5', provider: 'openrouter' },
+      { id: 'mistralai/mistral-large', provider: 'openrouter' }
+    ]
+  })!
+  t.deepEqual(rows.map(modelVendor), ['anthropic', 'openai', 'mistralai'])
+
+  // The invariant the earlier rebranding broke: display grouping must never
+  // change how the model is reached.
+  for (const row of rows) {
+    t.equal(modelTransportProvider(row), 'openrouter', `${row.id} still routes over OpenRouter`)
+  }
+  t.end()
+})
+
+tape('modelVendor: every other OpenRouter vendor stays under OpenRouter', (t) => {
+  // Only Anthropic / OpenAI / Mistral are pulled out; the picker must not
+  // sprout a section per vendor as the OpenRouter catalogue grows.
+  for (const id of [
+    'moonshotai/kimi-k2', 'google/gemini-3', 'meta-llama/llama-4',
+    'deepseek/deepseek-v3', 'x-ai/grok-4', 'qwen/qwen3', 'no-vendor-prefix'
+  ]) {
+    t.equal(modelVendor({ id, provider: 'openrouter' }), 'openrouter', `${id} → OpenRouter section`)
+  }
+  t.end()
+})
+
+tape('modelVendor: vendor spellings fold onto one section', (t) => {
+  t.equal(modelVendor({ id: 'mistral/mistral-small', provider: 'openrouter' }), 'mistralai')
+  t.equal(modelVendor({ id: 'MistralAI/Mistral-Large', provider: 'openrouter' }), 'mistralai', 'case-insensitive')
+  t.end()
+})
+
+tape('modelVendor: non-OpenRouter transports group under themselves', (t) => {
+  t.equal(modelVendor({ id: 'us.anthropic.claude-sonnet-4', provider: 'bedrock' }), 'bedrock',
+    'a Bedrock-hosted Claude belongs in the Bedrock section — that is the key it spends')
+  t.equal(modelVendor({ id: 'ollama', provider: 'ollama' }), 'ollama')
+  t.end()
+})
+
+tape('modelVendor: never returns a section outside the six', (t) => {
+  const ids = [
+    'anthropic/claude-sonnet-5', 'openai/gpt-5', 'mistralai/mistral-large',
+    'google/gemini-3', 'totally-unknown/model', 'bare-id', ''
+  ]
+  for (const id of ids) {
+    t.ok(MODEL_SECTIONS.includes(modelVendor({ id, provider: 'openrouter' })), `${id || '<empty>'} is one of the six`)
+  }
+  for (const provider of ['bedrock', 'ollama'] as const) {
+    t.ok(MODEL_SECTIONS.includes(modelVendor({ id: 'x', provider })), `${provider} is one of the six`)
+  }
+  t.end()
+})
+
+tape('classifyApiError: the OpenRouter tool-use 404 blames the model, not the tool', (t) => {
+  // Observed payload:
+  //   {"error":{"message":"No endpoints found that support tool use.
+  //     Try disabling \"solidity-erc20\".","code":404}}
+  const error: any = {
+    status: 404,
+    message: 'No endpoints found that support tool use. Try disabling "solidity-erc20".',
+    response: {
+      status: 404,
+      data: { error: { message: 'No endpoints found that support tool use. Try disabling "solidity-erc20".', code: 404 } }
+    }
+  }
+  const { type, retryable } = classifyApiError(error)
+  t.equal(type, DeepAgentErrorType.TOOL_USE_UNSUPPORTED)
+  t.equal(retryable, false, 'no retry can add tool support to an endpoint')
+
+  // The provider's own text must NOT win here, even though an envelope exists:
+  // following "disable solidity-erc20" cannot work, since the agent binds tools
+  // on every request.
+  const message = getErrorMessage(type, error)
+  t.ok(/cannot call tools/i.test(message), 'names the real cause')
+  t.ok(/different model|supports tool calling/i.test(message), 'gives the real fix')
+  t.ok(message.includes('solidity-erc20'), 'still surfaces what the provider named, as an aside')
+  t.end()
+})
+
+tape('modelSupportsToolCalling: reads capabilities, permissive when unadvertised', (t) => {
+  t.equal(modelSupportsToolCalling({ capabilities: ['chat', 'tools'] }), true)
+  t.equal(modelSupportsToolCalling({ capabilities: ['chat', 'function_calling'] }), true, 'accepts the alternate spelling')
+  t.equal(modelSupportsToolCalling({ capabilities: ['chat', 'code'] }), false, 'code alone is not tool calling')
+  t.equal(modelSupportsToolCalling({ capabilities: [] }), true,
+    'an empty list means the backend said nothing — do not disable the agent')
+  t.equal(modelSupportsToolCalling(undefined), true)
   t.end()
 })

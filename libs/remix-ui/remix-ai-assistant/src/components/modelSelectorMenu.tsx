@@ -1,19 +1,13 @@
 import React, { Dispatch, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { SiOllama, SiAmazonwebservices } from 'react-icons/si'
+import { SiOpenai, SiAnthropic, SiOllama, SiAmazonwebservices } from 'react-icons/si'
 import GroupListMenu, { LockedPillState } from './contextOptMenu'
 import { groupListType } from '../types/componentTypes'
-import { AIModel, modelKey, byokKeyState, isAutoModelId, type ByokKeyState } from '@remix/remix-ai-core'
+import { AIModel, modelKey, byokKeyState, isAutoModelId, modelVendor, type ByokKeyState } from '@remix/remix-ai-core'
 
-/**
- * Display metadata for each section header (label + subtitle), keyed by
- * transport. The icon is resolved separately by `providerIcon`.
- *
- * There were entries here for Anthropic / OpenAI / Mistral / Moonshot, back
- * when OpenRouter rows were rebranded onto their vendor so the picker could
- * group by brand. Those brands are gone; the vendor still reads from each
- * model's `vendor/slug` id and display name.
- */
 const PROVIDER_META: Record<string, { label: string; subtitle: string }> = {
+  anthropic: { label: 'Anthropic', subtitle: 'Claude models' },
+  openai: { label: 'OpenAI', subtitle: 'GPT models' },
+  mistralai: { label: 'Mistral AI', subtitle: 'Mistral models' },
   openrouter: { label: 'OpenRouter', subtitle: 'Many models via one route' },
   bedrock: { label: 'AWS Bedrock', subtitle: 'Models hosted on AWS' },
   ollama: { label: 'Local (Ollama)', subtitle: 'Run on your machine' }
@@ -23,17 +17,27 @@ const DEFAULT_PROVIDER_META = { label: 'Other', subtitle: '' }
 
 const providerMeta = (provider: string) => PROVIDER_META[provider] ?? { ...DEFAULT_PROVIDER_META, label: provider }
 
-/**
- * Mark per transport. Ollama and AWS come from `react-icons` (Simple Icons);
- * OpenRouter has no Simple Icons entry in the installed version, so it renders
- * a small inline mark. All icons inherit the current text colour.
- */
 const providerIcon = (provider: string): React.ReactNode => {
   switch (provider) {
+  case 'openai':
+    return <SiOpenai />
+  case 'anthropic':
+    return <SiAnthropic />
   case 'ollama':
     return <SiOllama />
   case 'bedrock':
     return <SiAmazonwebservices />
+  case 'mistralai':
+    // Mistral's ladder/grid mark: three columns crossed by two bands.
+    return (
+      <svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor" aria-hidden="true">
+        <rect x="2" y="3" width="4" height="18" />
+        <rect x="10" y="3" width="4" height="18" />
+        <rect x="18" y="3" width="4" height="18" />
+        <rect x="2" y="3" width="20" height="4" />
+        <rect x="2" y="10.5" width="20" height="4" />
+      </svg>
+    )
   case 'openrouter':
     // Routing hub: one node fanning out to two.
     return (
@@ -166,15 +170,14 @@ export default function ModelSelectorMenu(props: ModelSelectorMenuProps) {
     [props.availableModels]
   )
 
-  // Group the remaining models by provider, ordered by the lowest sortOrder in
-  // each group (keeps the backend's ordering intent; Ollama's 1000 lands last).
   const groups = useMemo<ProviderGroup[]>(() => {
     const byProvider = new Map<string, AIModel[]>()
     for (const model of props.availableModels) {
       if (isSignInModel(model) || isAutoModel(model)) continue
-      const list = byProvider.get(model.provider) ?? []
+      const vendor = modelVendor(model)
+      const list = byProvider.get(vendor) ?? []
       list.push(model)
-      byProvider.set(model.provider, list)
+      byProvider.set(vendor, list)
     }
     return Array.from(byProvider.entries())
       .map(([provider, models]) => ({
@@ -189,7 +192,7 @@ export default function ModelSelectorMenu(props: ModelSelectorMenuProps) {
     if (!props.currentChoice || props.currentChoice === 'auto') return undefined
     return props.availableModels.find(m => !isSignInModel(m) && !isAutoModel(m) && modelKey(m) === props.currentChoice)
   }, [props.availableModels, props.currentChoice])
-  const selectedProvider = selectedModel?.provider
+  const selectedProvider = selectedModel ? modelVendor(selectedModel) : undefined
 
   const [expanded, setExpanded] = useState<string | null>(selectedProvider ?? null)
 
