@@ -181,6 +181,71 @@ export class DeployContractHandler extends BaseToolHandler {
   }
 }
 
+/** Parse an ABI that arrived as a JSON string; returns null when it is not a usable array. */
+function coerceAbi(abi: any): any[] | null {
+  if (Array.isArray(abi)) return abi;
+  if (typeof abi === 'string' && abi.trim()) {
+    try {
+      const parsed = JSON.parse(abi);
+      return Array.isArray(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/**
+ * The ABI for a contract the IDE already knows about.
+ */
+async function resolveContractAbi(
+  plugin: Plugin,
+  args: { abi?: any; address?: string; contractName?: string }
+): Promise<{ abi?: any[]; error?: string }> {
+  const supplied = coerceAbi(args.abi);
+  if (supplied) return { abi: supplied };
+  if (args.abi !== undefined && args.abi !== null) {
+    return { error: 'ABI must be an array (or a JSON string holding one)' };
+  }
+
+  // A deployed instance at this address — the most specific match there is.
+  if (args.address) {
+    try {
+      const deployed = await plugin.call('udappDeployedContracts', 'getDeployedContracts') as any[];
+      const instance = (deployed ?? []).find(
+        (c: any) => typeof c?.address === 'string' && c.address.toLowerCase() === args.address.toLowerCase()
+      );
+      const abi = coerceAbi(instance?.abi ?? instance?.contractData?.abi);
+      if (abi) return { abi };
+    } catch (e) {
+      remixAILogger.debug('[resolveContractAbi] deployed-contract lookup failed', e);
+    }
+  }
+
+  // Otherwise the latest compilation of that contract.
+  if (args.contractName) {
+    try {
+      const artefact = await plugin.call(
+        'compilerArtefacts', 'getCompilerAbstractByContractName', args.contractName
+      ) as CompilerAbstract;
+      if (artefact) {
+        const data = getContractData(args.contractName, artefact);
+        const abi = coerceAbi((data as any)?.abi);
+        if (abi) return { abi };
+      }
+    } catch (e) {
+      remixAILogger.debug('[resolveContractAbi] compilation lookup failed', e);
+    }
+  }
+
+  return {
+    error:
+      `Could not resolve the ABI for '${args.contractName ?? args.address}'. ` +
+      'Compile the contract (solidity_compile) or attach it at its address (add_instance) first, ' +
+      'or pass the abi argument explicitly.'
+  };
+}
+
 /**
  * Call Contract Method Tool Handler
  */
@@ -201,7 +266,7 @@ export class CallContractHandler extends BaseToolHandler {
       },
       abi: {
         type: 'array',
-        description: '',
+        description: 'Optional. Leave it out — the ABI is resolved from the deployed instance at this address, or from the last compilation of contractName.',
         items: {
           type: 'object'
         }
@@ -237,7 +302,8 @@ export class CallContractHandler extends BaseToolHandler {
         description: 'Account to call from'
       }
     },
-    required: ['address', 'abi', 'methodName', 'contractName']
+    // `abi` is deliberately not required — see resolveContractAbi.
+    required: ['address', 'methodName', 'contractName']
   };
 
   getPermissions(): string[] {
@@ -245,7 +311,7 @@ export class CallContractHandler extends BaseToolHandler {
   }
 
   validate(args: CallContractArgs): boolean | string {
-    const required = this.validateRequired(args, ['address', 'abi', 'methodName', 'contractName']);
+    const required = this.validateRequired(args, ['address', 'methodName', 'contractName']);
     if (required !== true) return required;
 
     const types = this.validateTypes(args, {
@@ -262,15 +328,9 @@ export class CallContractHandler extends BaseToolHandler {
       return 'Invalid contract address format';
     }
 
-    if (!Array.isArray(args.abi)) {
-      try {
-        args.abi = JSON.parse(args.abi as any)
-        if (!Array.isArray(args.abi)) {
-          return 'ABI must be an array'
-        }
-      } catch (e) {
-        return 'ABI must be an array'
-      }
+    // An omitted ABI is resolved in execute(); only a malformed one is rejected here.
+    if (args.abi !== undefined && args.abi !== null && !coerceAbi(args.abi)) {
+      return 'ABI must be an array (or a JSON string holding one)'
     }
 
     return true;
@@ -278,7 +338,23 @@ export class CallContractHandler extends BaseToolHandler {
 
   async execute(args: CallContractArgs, plugin: Plugin): Promise<IMCPToolResult> {
     try {
-      const funcABI = args.abi.find((item: any) => item.name === args.methodName && item.type === 'function')
+      const resolved = await resolveContractAbi(plugin, args)
+      if (!resolved.abi) {
+        return this.createErrorResult(resolved.error);
+      }
+      const abi = resolved.abi
+
+      const funcABI = abi.find((item: any) => item.name === args.methodName && item.type === 'function')
+      if (!funcABI) {
+        // Reading .stateMutability off this used to throw a bare TypeError.
+        const callable = abi
+          .filter((item: any) => item.type === 'function')
+          .map((item: any) => item.name)
+        return this.createErrorResult(
+          `'${args.methodName}' is not a function on ${args.contractName}. ` +
+          (callable.length ? `Available methods: ${callable.join(', ')}` : 'This ABI declares no callable functions.')
+        );
+      }
       const isView = funcABI.stateMutability === 'view' || funcABI.stateMutability === 'pure';
       let txReturn
       try {
@@ -291,7 +367,7 @@ export class CallContractHandler extends BaseToolHandler {
         const params = funcABI.type !== 'fallback' ? (args.args? args.args.join(',') : ''): ''
         txReturn = await plugin.call('blockchain', 'runOrCallContractMethod',
           args.contractName,
-          args.abi,
+          abi,
           funcABI,
           undefined,
           args.args ? args.args : [],
@@ -546,15 +622,20 @@ export class SetExecutionEnvironmentHandler extends BaseToolHandler {
 
     try {
       const providers = await plugin.call('blockchain', 'getAllProviders')
-      const provider = Object.keys(providers).find((p) => p === args.environment)
+      const names = Object.keys(providers ?? {})
+      const normalize = (v: string) => v.toLowerCase().replace(/[\s_-]+/g, '')
+      const provider = names.find((p) => p === args.environment)
+        ?? names.find((p) => normalize(p) === normalize(args.environment ?? ''))
       if (!provider) {
-        return this.createErrorResult(`Could not find provider for environment '${args.environment}'`);
+        return this.createErrorResult(
+          `Could not find provider for environment '${args.environment}'. Available environments: ${names.join(', ')}`
+        );
       }
-      await plugin.call('udappEnv', 'changeExecutionContext', { context: args.environment })
+      await plugin.call('udappEnv', 'changeExecutionContext', { context: provider })
       return this.createSuccessResult({
         success: true,
-        message: `Execution environment set to: ${args.environment}`,
-        environment: args.environment,
+        message: `Execution environment set to: ${provider}`,
+        environment: provider,
       });
 
     } catch (error) {
@@ -947,7 +1028,8 @@ export class AddInstanceHandler extends BaseToolHandler {
         description: ''
       }
     },
-    required: ['contractAddress', 'abi', 'contractName']
+    // `abi` is deliberately not required — see resolveContractAbi.
+    required: ['contractAddress', 'contractName']
   };
 
   getPermissions(): string[] {
@@ -955,7 +1037,7 @@ export class AddInstanceHandler extends BaseToolHandler {
   }
 
   validate(args: AddInstanceArgs): boolean | string {
-    const required = this.validateRequired(args, ['contractAddress', 'abi', 'contractName']);
+    const required = this.validateRequired(args, ['contractAddress', 'contractName']);
     if (required !== true) return required;
 
     const types = this.validateTypes(args, {
@@ -968,15 +1050,9 @@ export class AddInstanceHandler extends BaseToolHandler {
       return 'Invalid contract address format';
     }
 
-    if (!Array.isArray(args.abi)) {
-      try {
-        args.abi = JSON.parse(args.abi as any);
-        if (!Array.isArray(args.abi)) {
-          return 'ABI must be an array';
-        }
-      } catch (e) {
-        return 'ABI must be an array or valid JSON string';
-      }
+    // An omitted ABI is resolved in execute(); only a malformed one is rejected here.
+    if (args.abi !== undefined && args.abi !== null && !coerceAbi(args.abi)) {
+      return 'ABI must be an array or valid JSON string';
     }
 
     return true;
@@ -984,17 +1060,11 @@ export class AddInstanceHandler extends BaseToolHandler {
 
   async execute(args: AddInstanceArgs, plugin: Plugin): Promise<IMCPToolResult> {
     try {
-      let abi = args.abi
-      if (typeof args.abi === 'string') {
-        try {
-          abi = JSON.parse(args.abi)
-          if (!Array.isArray(abi)) {
-            return this.createErrorResult('ABI must be an array');
-          }
-        } catch (e) {
-          return this.createErrorResult('ABI must be a valid JSON string');
-        }
+      const resolved = await resolveContractAbi(plugin, { abi: args.abi, address: args.contractAddress, contractName: args.contractName })
+      if (!resolved.abi) {
+        return this.createErrorResult(resolved.error);
       }
+      const abi = resolved.abi
       await plugin.call('sidePanel', 'showContent', 'udapp');
 
       let data

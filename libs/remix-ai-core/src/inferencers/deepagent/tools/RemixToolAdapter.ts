@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { IMCPTool, IMCPToolCall, IMCPToolResult } from '../../../types/mcp'
 import { RemixToolDefinition, ToolRegistry } from '../../../remix-mcp-server/types/mcpTools'
 import { ToolApprovalGate } from './ToolApprovalGate'
-import { jsonSchemaToZod, mcpResultToString, sanitizeToolName } from './schemaConverters'
+import { jsonSchemaToZod, mcpResultToString, sanitizeToolName, withTolerantKeys } from './schemaConverters'
 
 export class RemixToolAdapter {
   private plugin: Plugin
@@ -72,8 +72,9 @@ export class RemixToolAdapter {
           continue
         }
 
-        // Convert inputSchema to Zod schema
-        const zodSchema = jsonSchemaToZod(tool.inputSchema)
+        // Convert inputSchema to Zod schema. withTolerantKeys only affects
+        // validation — the JSON Schema the model is shown is unchanged.
+        const zodSchema = withTolerantKeys(jsonSchemaToZod(tool.inputSchema))
 
         let func = async (input: Record<string, any>): Promise<string> => {
           try {
@@ -117,7 +118,7 @@ export class RemixToolAdapter {
   }
 
   private convertToLangChainTool(toolDef: RemixToolDefinition): DynamicStructuredTool {
-    const zodSchema = jsonSchemaToZod(toolDef.inputSchema)
+    const zodSchema = withTolerantKeys(jsonSchemaToZod(toolDef.inputSchema))
 
     let func = async (input: Record<string, any>): Promise<string> => {
       try {

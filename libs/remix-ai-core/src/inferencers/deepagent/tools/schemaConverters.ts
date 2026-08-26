@@ -18,6 +18,48 @@ export function sanitizeToolName(name: string | undefined): string | null {
  * @param schema - JSON Schema object
  * @returns Zod object schema
  */
+function normalizeEnumValue(value: string): string {
+  return value.toLowerCase().replace(/[\s_-]+/g, '')
+}
+
+/**
+ * Accept an argument name that differs from the declared one only in case or
+ * separators — `file_path` for `filePath`, `FILEPATH`, `file-path`.
+ *
+ */
+export function withTolerantKeys(objectSchema: z.ZodObject<any>): z.ZodType {
+  const declared = Object.keys(objectSchema.shape ?? {})
+  if (declared.length === 0) return objectSchema
+  const canonicalOf = new Map(declared.map((key) => [normalizeEnumValue(key), key]))
+
+  return z.preprocess((raw) => {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return raw
+    const input = raw as Record<string, any>
+    let renamed = false
+    const out: Record<string, any> = {}
+    for (const [key, value] of Object.entries(input)) {
+      const canonical = canonicalOf.get(normalizeEnumValue(key))
+      if (canonical && canonical !== key && !(canonical in input)) {
+        out[canonical] = value
+        renamed = true
+      } else {
+        out[key] = value
+      }
+    }
+    return renamed ? out : input
+  }, objectSchema)
+}
+
+function softEnum(values: string[], description?: string): z.ZodTypeAny {
+  const canonical = new Map(values.map((v) => [normalizeEnumValue(v), v]))
+  const allowed = `Allowed values: ${values.join(' | ')}.`
+  const coerced = z.preprocess((raw) => {
+    if (typeof raw !== 'string') return raw
+    return canonical.get(normalizeEnumValue(raw)) ?? raw
+  }, z.string())
+  return coerced.describe(description ? `${description} ${allowed}` : allowed)
+}
+
 export function jsonSchemaToZod(schema: any): z.ZodObject<any> {
   const shape: Record<string, z.ZodTypeAny> = {}
 
@@ -28,11 +70,13 @@ export function jsonSchemaToZod(schema: any): z.ZodObject<any> {
       switch (prop.type) {
       case 'string':
         if (Array.isArray(prop.enum) && prop.enum.length > 0 && prop.enum.every((v: any) => typeof v === 'string')) {
-          zodType = z.enum(prop.enum as [string, ...string[]])
+          // describe() is applied inside softEnum — the allowed values have to
+          // reach the model even when the schema carries no description.
+          zodType = softEnum(prop.enum as string[], prop.description)
         } else {
           zodType = z.string()
+          if (prop.description) zodType = zodType.describe(prop.description)
         }
-        if (prop.description) zodType = zodType.describe(prop.description)
         break
       case 'number':
         zodType = z.number()

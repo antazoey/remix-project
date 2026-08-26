@@ -8,6 +8,7 @@ import axios from 'axios';
 import { endpointUrls } from "@remix-endpoints-helper"
 // Shared with the agent path so both classify failures identically.
 import { classifyApiError, getErrorMessage } from "../deepagent/ApiErrorHandler"
+import { withRetryingFetch } from "../deepagent/retryTransport"
 
 const defaultErrorMessage = `Unable to get a response from AI server`
 
@@ -233,7 +234,11 @@ export class RemoteInferencer implements ICompletions, IGeneration {
       const requestURL = rType === AIRequestType.COMPLETION ? this.completion_url : this.api_url
       const token = typeof window !== 'undefined' ? window.localStorage?.getItem('remix_access_token') : undefined
       const authHeader = token ? { 'Authorization': `Bearer ${token}` } : {}
-      const response = await fetch(requestURL, {
+      const streamingFetch = withRetryingFetch(
+        (input, init) => fetch(input as any, init),
+        rType === AIRequestType.COMPLETION ? 'completion' : 'chat'
+      )
+      const response = await streamingFetch(requestURL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
