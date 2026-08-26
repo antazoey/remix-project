@@ -1738,7 +1738,6 @@ export const RemixUiRemixAiAssistant = React.forwardRef<
   // reusable sender (used by both UI button and imperative ref)
   const sendPrompt = useCallback(
     async (prompt: string, isEditorCodeAnalysis: boolean = false, metadata?: ChatPromptMetadata) => {
-      console.log('sendPrompt')
       const trimmed = prompt.trim()
       if (!trimmed || isStreaming) return
 
