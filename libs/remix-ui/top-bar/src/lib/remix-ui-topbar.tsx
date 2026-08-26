@@ -554,6 +554,15 @@ export function RemixUiTopbar() {
     }
   }
 
+  const openDomainMigration = async () => {
+    try {
+      await plugin.call('manager', 'activatePlugin', 'domainMigration')
+      await plugin.call('domainMigration', 'showMigration')
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
   const onFinishDeleteAllWorkspaces = async () => {
     try {
       await deleteAllWorkspacesAction()
@@ -850,6 +859,7 @@ export function RemixUiTopbar() {
               downloadCurrentWorkspace={downloadCurrentWorkspace}
               deleteCurrentWorkspace={deleteCurrentWorkspace}
               downloadWorkspaces={downloadWorkspaces}
+              openDomainMigration={openDomainMigration}
               restoreBackup={restoreBackup}
               deleteAllWorkspaces={deleteAllWorkspaces}
               setCurrentMenuItemName={setCurrentMenuItemName}

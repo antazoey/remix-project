@@ -50,6 +50,7 @@ import { TransactionSimulator } from './app/plugins/transaction-simulator'
 import { EnsContractNamesPlugin } from './app/plugins/ens-contract-names'
 import { CodeFormat } from './app/plugins/code-format'
 import { CompilationDetailsPlugin } from './app/plugins/compile-details'
+import { DomainMigrationPlugin } from './app/plugins/domain-migration'
 import { AuthPlugin } from './app/plugins/auth-plugin'
 import { InvitationManagerPlugin } from './app/plugins/invitation-manager-plugin'
 import { MembershipRequestPlugin } from './app/plugins/membership-request-plugin'
@@ -402,6 +403,9 @@ class AppComponent {
     const compilationDetails = new CompilationDetailsPlugin(appManager)
     const vyperCompilationDetails = new VyperCompilationDetailsPlugin(appManager)
 
+    // ----------------- Cross-domain migration ----------------------------
+    const domainMigration = new DomainMigrationPlugin(appManager)
+
     // ----------------- Remix Guide ----------------------------
     const remixGuide = new RemixGuidePlugin(appManager)
 
@@ -574,6 +578,7 @@ class AppComponent {
       solidityumlgen,
       compilationDetails,
       vyperCompilationDetails,
+      domainMigration,
       remixGuide,
       contractFlattener,
       solidityScript,
