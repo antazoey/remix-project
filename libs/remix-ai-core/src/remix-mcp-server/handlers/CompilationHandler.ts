@@ -48,7 +48,7 @@ export class SolidityCompileHandler extends BaseToolHandler {
       evmVersion: {
         type: 'string',
         description: 'EVM version target',
-        enum: ['london', 'berlin', 'istanbul', 'petersburg', 'constantinople', 'byzantium'],
+        enum: ['osaka', 'london', 'berlin', 'istanbul', 'petersburg', 'constantinople', 'byzantium'],
         default: 'london'
       }
     },
