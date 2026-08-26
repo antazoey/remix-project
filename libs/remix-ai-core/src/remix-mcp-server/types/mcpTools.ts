@@ -149,7 +149,8 @@ export interface CallContractArgs {
 }
 
 export interface SendTransactionArgs {
-  to: string;
+  /** Omitted for a contract-creation transaction. */
+  to?: string;
   value?: string;
   data?: string;
   gasLimit?: number;
