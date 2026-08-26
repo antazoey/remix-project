@@ -48,6 +48,7 @@ const profile = {
     'onTaskStart', 'onTaskComplete', 'onTodoUpdate',
     'onTodoError', 'onAgentError', 'onApiError',
     'onToolApprovalRequired', 'ollamaModelDiscovered',
+    'onInactivityTimeout',
     'requestCancelled'
   ],
   icon: 'assets/img/remix-logo-blue.png',
@@ -527,7 +528,7 @@ export class RemixAIPlugin extends Plugin {
           // routeProvider must travel with the selection: branded rows (Claude
           // via OpenRouter, etc.) carry the vendor as `provider` and the actual
           // transport as `routeProvider`, which is what ModelFactory dials.
-          { provider: this.selectedModel.provider as 'anthropic' | 'mistralai' | 'openai' | 'moonshot' | 'openrouter' | 'ollama' | 'bedrock', modelId: this.selectedModelId, routeProvider: this.selectedModel.routeProvider } // Pass selected model
+          { provider: this.selectedModel.provider, modelId: this.selectedModelId, routeProvider: this.selectedModel.routeProvider } // Pass selected model
         )
         await this.deepAgentInferencer.initialize()
         // Set up DeepAgent event listeners for streaming (once only)
@@ -689,7 +690,7 @@ export class RemixAIPlugin extends Plugin {
     this.emit('codeCompletionUsed')
     return this.withAssistantGate(Features.AI_COMPLETION, async () => {
       if (this.completionAgent.indexer == null || this.completionAgent.indexer == undefined) await this.completionAgent.indexWorkspace()
-      params.provider = 'mistralai' // default provider for code completion
+      params.provider = 'openrouter' // every hosted model routes through OpenRouter
       const currentFileName = await this.call('fileManager', 'getCurrentFile')
       const contextfiles = await this.completionAgent.getContextFiles(prompt)
       return await this.remoteInferencer.code_completion(prompt, promptAfter, contextfiles, currentFileName, params)
@@ -854,7 +855,7 @@ export class RemixAIPlugin extends Plugin {
   async generate(prompt: string, params: IParams=AssistantParams, newThreadID:string="", useRag:boolean=false, statusCallback?: (status: string) => Promise<void>): Promise<any> {
     params.stream_result = false // enforce no stream result
     params.threadId = newThreadID
-    params.provider = 'mistralai' // enforce all generation to be only on anthropic
+    params.provider = 'openrouter' // every hosted model routes through OpenRouter
     params.model = 'mistral-medium-latest'
     useRag = false
     trackMatomoEvent(this, { category: 'ai', action: 'remixAI', name: 'GenerateNewAIWorkspace', isClick: false })
@@ -949,7 +950,7 @@ export class RemixAIPlugin extends Plugin {
     return this.withAssistantGate(Features.AI_COMPLETION, async () => {
       if (this.completionAgent.indexer == null || this.completionAgent.indexer == undefined) await this.completionAgent.indexWorkspace()
 
-      params.provider = 'mistralai' // default provider for code completion
+      params.provider = 'openrouter' // every hosted model routes through OpenRouter
       const currentFileName = await this.call('fileManager', 'getCurrentFile')
       const contextfiles = await this.completionAgent.getContextFiles(msg_pfx)
       return await this.remoteInferencer.code_insertion( msg_pfx, msg_sfx, contextfiles, currentFileName, params)

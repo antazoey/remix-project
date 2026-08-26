@@ -20,7 +20,7 @@
 import { setup, createActor, type AnyActorRef } from 'xstate'
 import type { PermissionsResponse } from '@remix-api'
 import { Features } from '@remix-api'
-import { ANONYMOUS_FALLBACK_MODELS, parseAIModelsFromPermissions, curateOpenRouterBrandedModels, isOpenRouterRouted, type AIModel } from '../types/models'
+import { ANONYMOUS_FALLBACK_MODELS, parseAIModelsFromPermissions, curateOpenRouterBrandedModels, isOpenRouterRouted, isAutoModelId, type AIModel } from '../types/models'
 
 // ─── Public types ───────────────────────────────────────────────────
 
@@ -598,45 +598,6 @@ export function selectPlanManagerHandoff(snap: AssistantSnapshot): PlanManagerHa
   }
 }
 
-/**
- * Allowed provider/model IDs. Drives the model picker without scattering
- * `if (features['ai:foo'])` checks across the codebase. Pass in the static
- * model registry; we filter by `ai:<provider>` feature flags.
- *
- * Convention (matches the live /permissions/ shape):
- *   feature_name === 'ai:Mistral'   → mistralai provider models
- *   feature_name === 'ai:Anthropic' → anthropic provider models
- *   feature_name === 'ai:OpenAI'    → openai provider models
- *   feature_name === 'ai:completion' → models with capabilities including 'completion'
- */
-export function selectAllowedModelIds(
-  snap: AssistantSnapshot,
-  models: ReadonlyArray<{ id: string; provider: string; capabilities?: string[] }>
-): string[] {
-  if (!snap.permissions?.features) {
-    // No permissions yet — fall back to anything that doesn't require auth.
-    // (Mirrors getDefaultModel() behaviour.)
-    return models.filter((m) => m.provider === 'mistralai').map((m) => m.id)
-  }
-  const allowed: string[] = []
-  for (const m of models) {
-    if (m.provider === 'ollama') { allowed.push(m.id); continue }
-    // Provider key is capitalised in /permissions/ (`ai:Mistral`, not `ai:mistralai`).
-    const providerKey = providerToFeatureKey(m.provider)
-    if (providerKey && isFeatureEnabled(snap.permissions, providerKey)) allowed.push(m.id)
-  }
-  return allowed
-}
-
-function providerToFeatureKey(provider: string): string | null {
-  switch (provider) {
-  case 'mistralai': return Features.AI_PROVIDER_MISTRAL
-  case 'anthropic': return Features.AI_PROVIDER_ANTHROPIC
-  case 'openai': return Features.AI_PROVIDER_OPENAI
-  default: return null
-  }
-}
-
 /** Seconds remaining on the current cooldown, or null if none. */
 export function selectCooldownRemaining(snap: AssistantSnapshot, now: number = Date.now()): number | null {
   if (snap.cooldown === 'blocked') return Number.POSITIVE_INFINITY
@@ -681,7 +642,7 @@ export function selectAvailableModels(snap: AssistantSnapshot): AIModel[] {
  * and the caller must wait (or reject loudly).
  */
 export function selectDefaultModel(snap: AssistantSnapshot): AIModel | null {
-  const models = selectAvailableModels(snap)
+  const models = selectAvailableModels(snap).filter((m) => !isAutoModelId(m.id))
   if (!models.length) return null
   // OpenRouter is the default router: among `available` rows flagged
   // is_default, an OpenRouter-routed one wins. Only when the backend advertises

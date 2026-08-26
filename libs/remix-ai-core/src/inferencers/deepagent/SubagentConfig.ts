@@ -36,6 +36,7 @@ import {
   getSecurityToolsForSecurityAuditor
 } from './helpers/subagentToolFilters'
 import { Features } from '@remix-api'
+import { remixAILogger } from '../../helpers/logger'
 
 export interface SubagentConfigItem {
   name: string
@@ -233,6 +234,8 @@ export async function buildSubagentConfigs(
       }
     )
   }
+
+  remixAILogger.log('[SubagentConfig] ' + agents.map((a: any) => `${a.name}=${a.model?.model ?? '?'}`).join(' '))
 
   return agents
 }

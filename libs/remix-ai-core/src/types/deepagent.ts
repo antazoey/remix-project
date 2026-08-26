@@ -1,9 +1,23 @@
-export type ModelProvider = 'anthropic' | 'mistralai' | 'openai' | 'moonshot' | 'openrouter' | 'ollama' | 'bedrock'
+/**
+ * The transports that actually carry a request. Exactly three: OpenRouter
+ * routes every hosted model, Bedrock is BYOK-direct, Ollama is local.
+ */
+export type ModelTransport = 'openrouter' | 'bedrock' | 'ollama'
+
+/**
+ * @deprecated Alias of {@link ModelTransport}, kept so existing call sites keep
+ * compiling. The vendor brands ('anthropic' | 'mistralai' | 'openai' |
+ * 'moonshot') are gone: every hosted model reaches us through OpenRouter, so
+ * there is nothing left for a brand to select. Prefer `ModelTransport`.
+ */
+export type ModelProvider = ModelTransport
 
 export interface ModelSelection {
+  /** Display brand. */
   provider: ModelProvider
   modelId: string
-  routeProvider?: ModelProvider
+  /** The transport that carries the request; wins over `provider`. */
+  routeProvider?: ModelTransport
 }
 
 /**
@@ -75,6 +89,8 @@ export enum DeepAgentErrorType {
   AUTHENTICATION_FAILED = 'authentication_failed',
   QUOTA_EXCEEDED = 'quota_exceeded',
   MODEL_OVERLOADED = 'model_overloaded',
+  CONTENT_BLOCKED = 'content_blocked',
+  TOOL_USE_UNSUPPORTED = 'tool_use_unsupported',
   UNKNOWN = 'unknown'
 }
 

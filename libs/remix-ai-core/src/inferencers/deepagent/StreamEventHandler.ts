@@ -28,6 +28,7 @@ export class StreamEventHandler {
   private inactivityTimeout: InactivityTimeoutManager
   private activeSubagents: Map<string, SubagentInfo> = new Map()
   private previousRunId: string | null = null
+  private streamError: any | null = null
   private isIntermediatePhase = true
   private inThinking = false
   private tokenUsage: TokenUsageState = {
@@ -56,6 +57,30 @@ export class StreamEventHandler {
     this.inactivityTimeout.reset()
   }
 
+  /** First error seen on the stream during this run, if any. */
+  getStreamError(): any | null {
+    return this.streamError
+  }
+
+  private recordStreamError(eventType: string, event: any): void {
+    const error = event?.data?.error ?? event?.data?.output ?? null
+    remixAILogger.error(`[StreamEventHandler] ${eventType}`, error ?? event)
+    if (this.streamError) return
+
+    if (error) {
+      this.streamError = error
+      return
+    }
+
+    // An error event with no payload still means a node failed. Recording
+    // nothing here is why runs surfaced as a bare `Error: Abort` with
+    // "graph aborted with no recorded node error" — the cause was known
+    // (which node, which event) and thrown away. Synthesize one instead.
+    const name = event?.name ?? event?.metadata?.langgraph_node ?? 'unknown node'
+    const runId = event?.run_id ? ` (run ${event.run_id})` : ''
+    this.streamError = new Error(`${eventType} in ${name}${runId} — the provider reported no error detail`)
+  }
+
   stopInactivityTracking(): void {
     this.inactivityTimeout.clear()
   }
@@ -63,6 +88,7 @@ export class StreamEventHandler {
   reset(): void {
     this.activeSubagents.clear()
     this.previousRunId = null
+    this.streamError = null
     this.isIntermediatePhase = true
     this.inThinking = false
     this.tokenUsage = {
@@ -109,6 +135,16 @@ export class StreamEventHandler {
 
     case 'on_tool_end':
       return { content: this.handleToolEnd(event) }
+
+    // LangGraph answers a node failure by aborting the graph, and the error
+    // that escapes `streamEvents` is a bare `Error("Abort")` — the real cause
+    // only ever appears on these events. Keep the first one so runAgent can
+    // report it instead of the meaningless abort.
+    case 'on_chat_model_error':
+    case 'on_tool_error':
+    case 'on_chain_error':
+      this.recordStreamError(eventType, event)
+      return { content: '' }
 
     default:
       return { content: '' }
