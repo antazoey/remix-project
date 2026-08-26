@@ -4,7 +4,7 @@ import { remixAILogger } from '../../helpers/logger'
  * Integrates LangChain DeepAgent with Remix's AI system
  */
 
-import { createDeepAgent, CreateDeepAgentParams } from 'deepagents'
+import { createDeepAgent, createPatchToolCallsMiddleware, CreateDeepAgentParams } from 'deepagents'
 import { ICompletions, IGeneration, IParams } from '../../types/types'
 import { Plugin } from '@remixproject/engine'
 import EventEmitter from 'events'
@@ -37,6 +37,7 @@ import { SecurityCheckSchema } from '../../types/schemas'
 import { getLangfuseCallbackHandler, flushLangfuse } from '../../helpers/langfuse'
 import { setCurrentSessionId } from './helpers/runContext'
 import { buildSubagentConfigs } from './SubagentConfig'
+import { resolveHarnessProfile, applyHarnessToolRules } from './harnessProfiles'
 import { StreamEventHandler } from './StreamEventHandler'
 import { CONVERSATION_THREAD_PREFIX, DAPP_MAX_TOKENS } from '@remix/remix-ai-core'
 import { Features } from '@remix-api'
@@ -1001,47 +1002,49 @@ export class DeepAgentInferencer implements ICompletions, IGeneration {
       }
       const checkpointer = this.checkpointer
       const hasSkillsPermission = this.hasSkillsPermission
-
-      const systemPromptWithContext = REMIX_DEEPAGENT_SYSTEM_PROMPT
+      const harnessProfile = resolveHarnessProfile(this.modelSelection)
 
       // Create agent configuration with selected tools
-      // Cast tools and model to any to handle @langchain/core version mismatch between root and deepagents
       const agentConfig: CreateDeepAgentParams = {
         backend: this.filesystemBackend as any,
         tools: [],
         model: this.model,
-        systemPrompt: systemPromptWithContext,
+        systemPrompt: {
+          base: REMIX_DEEPAGENT_SYSTEM_PROMPT,
+          ...(harnessProfile?.systemPromptSuffix ? { suffix: harnessProfile.systemPromptSuffix } : {})
+        },
         skills: hasSkillsPermission ? ["skills/"] : [],
         checkpointer,
-        middleware: [new RemixDeepAgentMiddleware(this.plugin, this)],
+        middleware: [createPatchToolCallsMiddleware(), new RemixDeepAgentMiddleware(this.plugin, this)],
       }
 
       if (this.config.enableSubagents && this.model) {
-        // Subagents write code. When the active selection isn't advertised as
-        // code-capable, ask the catalogue for one that is — no literal ids.
-        // `resolveCodeCapableSelection` returns null when the current model is
-        // already fine, or when the catalogue offers nothing better.
         let fallbackModel = this.model
+        let subagentSelection = this.modelSelection
         const codeCapable = await resolveCodeCapableSelection(this.plugin, this.modelSelection)
         if (codeCapable) {
           const candidate = await createModelInstance(codeCapable, DAPP_MAX_TOKENS, this.userApiKeys)
           // Subagents bind tools on every request. A code-capable model that
-          // cannot call them fails each one with OpenRouter's
-          // `404 No endpoints found that support tool use`, naming whichever
-          // tool happens to come first — so keep the user's model instead.
           if (modelInstanceSupportsTools(candidate)) {
             fallbackModel = candidate
+            subagentSelection = codeCapable
             remixAILogger.log(`[DeepAgentInferencer] Subagents use ${codeCapable.modelId} (route=${codeCapable.routeProvider ?? codeCapable.provider}); ${this.modelSelection.modelId} is not advertised as code-capable`)
           } else {
             remixAILogger.warn(`[DeepAgentInferencer] ${codeCapable.modelId} cannot call tools — subagents stay on ${this.modelSelection.modelId}`)
           }
         }
         // A subagent that cannot be built must not take the whole agent with
-        // it. Losing one specialist costs a capability; losing the agent means
-        // every prompt fails with "DeepAgent not initialized" and no cause.
+        const subagentProfile = resolveHarnessProfile(subagentSelection)
+        const shapedTools = applyHarnessToolRules(this.tools, subagentProfile)
+        if (shapedTools.length !== this.tools.length) {
+          remixAILogger.log(
+            `[DeepAgentInferencer] harness profile for ${subagentSelection.modelId} hides ` +
+            `${this.tools.length - shapedTools.length} tool(s) from subagents`
+          )
+        }
         try {
           agentConfig.subagents = await buildSubagentConfigs(
-            this.tools,
+            shapedTools,
             this.model,
             this.filesystemBackend,
             fallbackModel
@@ -1053,26 +1056,25 @@ export class DeepAgentInferencer implements ICompletions, IGeneration {
           )
           agentConfig.subagents = []
         }
-        let subagentsDesc = ''
-        agentConfig.subagents.forEach(sub => {
-          subagentsDesc += `\n- ${sub.name}:${sub.description || ''}`
-        })
-        agentConfig.systemPrompt += `\n\n## The agent has access to the following subagents:${subagentsDesc}`
+        const subagentsDesc = agentConfig.subagents
+          .map(sub => `\n- ${sub.name}:${sub.description || ''}`)
+          .join('')
+        const roster = `## The agent has access to the following subagents:${subagentsDesc}`
+        const promptConfig = agentConfig.systemPrompt as { base?: string; suffix?: string | null }
+        promptConfig.suffix = promptConfig.suffix
+          ? `${roster}\n\n${promptConfig.suffix}`
+          : roster
       }
 
       if (this.memoryBackend) {
         agentConfig.store = this.memoryBackend as any
       }
 
-      // Cast result to any to handle @langchain/core version mismatch between root and deepagents
-      this.agent = createDeepAgent(agentConfig as any) as any
+      this.agent = createDeepAgent(agentConfig as any) as DeepAgent
 
       remixAILogger.log(`[DeepAgentInferencer] Recreated agent with ${selectedTools.length} selected tools`)
     } catch (error) {
       remixAILogger.error('[DeepAgentInferencer] Failed to recreate agent with selected tools:', error)
-      // Swallowing this left `this.agent` null, so the next prompt failed with
-      // "DeepAgent not initialized" — a message that describes the symptom and
-      // hides the cause. Surface the real failure to the caller instead.
       throw new DeepAgentError(
         `Failed to build the agent: ${(error as any)?.message ?? error}`,
         DeepAgentErrorType.INITIALIZATION_FAILED,

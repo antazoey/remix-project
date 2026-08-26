@@ -37,14 +37,6 @@ export interface AIModel {
   requireAPIKey?: boolean
   /** Backend ordering hint. */
   sortOrder: number
-
-  // ── Runtime parameters ────────────────────────────────────────────────
-  // The backend is the source of truth for how a model must be *driven*,
-  // exactly as it is for whether the model may be used at all. Every field
-  // below is optional: `resolveModelParams` falls back to a per-provider
-  // default when the backend hasn't advertised one, so an older payload
-  // keeps working. Never hardcode these per model id on the client.
-
   /** Max output tokens this model accepts. Backend `max_output_tokens`. */
   maxOutputTokens?: number
   /** Total context window in tokens. Backend `context_window`. */
@@ -55,6 +47,17 @@ export interface AIModel {
   topP?: number
   /** Model emits reasoning/thinking content. Backend `supports_reasoning`. */
   supportsReasoning?: boolean
+  systemPromptSuffix?: string
+  /** Tool names to hide from this model. Backend `excluded_tools`. */
+  excludedTools?: string[]
+  /** Per-tool description rewrites. Backend `tool_description_overrides`. */
+  toolDescriptionOverrides?: Record<string, string>
+  /** General-purpose subagent shaping. Backend `general_purpose_subagent`. */
+  generalPurposeSubagent?: {
+    enabled?: boolean
+    description?: string
+    systemPrompt?: string
+  }
 }
 
 /** Backwards-compat alias — old code reads `model.name`. */
@@ -151,6 +154,45 @@ function positiveNumber(value: any): number | undefined {
   return n !== undefined && n > 0 ? n : undefined
 }
 
+/** A non-empty trimmed string, or undefined. Blank means "not advertised". */
+function nonEmptyString(value: any): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : undefined
+}
+
+/** Array of non-empty strings, or undefined when nothing usable was sent. */
+function stringArray(value: any): string[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const items = value.map(nonEmptyString).filter((v): v is string => !!v)
+  return items.length > 0 ? items : undefined
+}
+
+/** Record of string→non-empty-string, or undefined. */
+function stringRecord(value: any): Record<string, string> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const out: Record<string, string> = {}
+  for (const [key, raw] of Object.entries(value)) {
+    const text = nonEmptyString(raw)
+    const name = nonEmptyString(key)
+    if (name && text) out[name] = text
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
+function generalPurposeSubagent(value: any): AIModel['generalPurposeSubagent'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const enabled = typeof value.enabled === 'boolean' ? value.enabled : undefined
+  const description = nonEmptyString(value.description)
+  const systemPrompt = nonEmptyString(value.system_prompt ?? value.systemPrompt)
+  if (enabled === undefined && !description && !systemPrompt) return undefined
+  return {
+    ...(enabled !== undefined ? { enabled } : {}),
+    ...(description ? { description } : {}),
+    ...(systemPrompt ? { systemPrompt } : {})
+  }
+}
+
 export function parseAIModelsFromPermissions(permissions: any): AIModel[] | null {
   const raw = permissions?.ai_models
   if (!Array.isArray(raw)) return null
@@ -176,7 +218,11 @@ export function parseAIModelsFromPermissions(permissions: any): AIModel[] | null
       topP: finiteNumber(m.top_p ?? m.topP),
       supportsReasoning: typeof (m.supports_reasoning ?? m.supportsReasoning) === 'boolean'
         ? !!(m.supports_reasoning ?? m.supportsReasoning)
-        : undefined
+        : undefined,
+      systemPromptSuffix: nonEmptyString(m.system_prompt_suffix ?? m.systemPromptSuffix),
+      excludedTools: stringArray(m.excluded_tools ?? m.excludedTools),
+      toolDescriptionOverrides: stringRecord(m.tool_description_overrides ?? m.toolDescriptionOverrides),
+      generalPurposeSubagent: generalPurposeSubagent(m.general_purpose_subagent ?? m.generalPurposeSubagent)
     }))
     .sort((a, b) => a.sortOrder - b.sortOrder)
 

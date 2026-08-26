@@ -3,21 +3,14 @@ import { remixAILogger } from '../../../helpers/logger'
 import { AIModel } from '../../../types/models'
 import { ModelSelection } from '../../../types/deepagent'
 import { setModelCatalog } from '../modelParams'
+import { registerHarnessProfilesFromCatalog } from '../harnessProfiles'
 
-/**
- * Catalogue access for the agent runtime.
- *
- * Everything here reads the backend catalogue through `assistantState`.
- * No literal model ids: a hardcoded fallback goes stale the moment the
- * catalogue moves, and the stale id then fails for every user at once.
- */
-
-/** Pull the live catalogue and mirror it into `modelParams` for param lookup. */
 export async function syncModelCatalog(plugin: Plugin): Promise<AIModel[]> {
   try {
     const models = await (plugin as any).call?.('assistantState', 'getAvailableModels')
     if (Array.isArray(models)) {
       setModelCatalog(models)
+      registerHarnessProfilesFromCatalog(models)
       return models
     }
   } catch { /* assistantState not active — callers fall back to defaults */ }
