@@ -32,8 +32,8 @@ module.exports = {
     browser
       .click('[data-id="modalDialogCustomPromptTextClone"]')
       .setValue('[data-id="modalDialogCustomPromptTextClone"]', testData.invalidURL)
-      .waitForElementVisible('*[data-id="topbarModalModalDialogModalFooter-react"]')
-      .click('[data-id="topbarModal-modal-footer-ok-react"]') // submitted
+      .waitForElementVisible('*[data-id="fileSystemModalDialogModalFooter-react"]')
+      .click('[data-id="fileSystem-modal-footer-ok-react"]') // submitted
       //.waitForElementVisible('*[data-shared="tooltipPopup"]')
       //.waitForElementContainsText('*[data-shared="tooltipPopup"] span', 'not found ' + testData.invalidURL)
   },
@@ -49,8 +49,8 @@ module.exports = {
       .waitForElementVisible('[data-id="modalDialogCustomPromptTextClone"]')
       .click('[data-id="modalDialogCustomPromptTextClone"]')
       .setValue('[data-id="modalDialogCustomPromptTextClone"]', testData.validURL)
-      .waitForElementVisible('*[data-id="topbarModal-modal-footer-ok-react"]')
-      .click('[data-id="topbarModal-modal-footer-ok-react"]')
+      .waitForElementVisible('*[data-id="fileSystem-modal-footer-ok-react"]')
+      .click('[data-id="fileSystem-modal-footer-ok-react"]')
       .openFile('Roles.sol')
       .waitForElementVisible({
         selector: `//*[@data-id='tab-active' and @data-path="git-hometab-test.git/Roles.sol"]`,
