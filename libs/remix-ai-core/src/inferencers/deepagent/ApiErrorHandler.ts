@@ -30,6 +30,10 @@ export function classifyApiError(error: any): ApiErrorClassification {
     return { type: DeepAgentErrorType.MODEL_OVERLOADED, retryable: true, retryAfter: 30 }
   }
 
+  if (message.includes('idle timeout')) {
+    return { type: DeepAgentErrorType.REQUEST_TIMEOUT, retryable: true, retryAfter: 5 }
+  }
+
   if (status === 503 || status === 502 || status === 504 || message.includes('service unavailable') ||
       message.includes('bad gateway') || message.includes('gateway timeout')) {
     return { type: DeepAgentErrorType.SERVICE_UNAVAILABLE, retryable: true, retryAfter: 10 }
@@ -117,6 +121,30 @@ export function extractRetryAfter(error: any): number {
   return 60
 }
 
+function isOpaqueMessage(message: string): boolean {
+  const m = message.trim().toLowerCase()
+  return m === 'abort' || m === 'aborted' || m === 'error' || m.includes('idle timeout')
+}
+
+function errorText(error: any): string {
+  return String(
+    error?.aiError?.message ??
+    error?.response?.data?.error?.message ??
+    error?.data?.error?.message ??
+    error?.message ??
+    ''
+  )
+}
+
+function isIdleTimeout(error: any): boolean {
+  return errorText(error).toLowerCase().includes('idle timeout')
+}
+
+function isBareAbort(error: any): boolean {
+  const m = errorText(error).trim().toLowerCase()
+  return m === 'abort' || m === 'aborted'
+}
+
 function toolUseUnsupportedMessage(error: any): string {
   const raw: string =
     error?.aiError?.message ??
@@ -143,8 +171,16 @@ export function getErrorMessage(errorType: DeepAgentErrorType, error: any, retry
     error?.aiError?.message ??
     error?.response?.data?.error?.message ??
     error?.data?.error?.message
-  if (typeof envelopeMessage === 'string' && envelopeMessage.length > 0) {
+  if (typeof envelopeMessage === 'string' && envelopeMessage.length > 0 && !isOpaqueMessage(envelopeMessage)) {
     return envelopeMessage
+  }
+
+  if (isIdleTimeout(error)) {
+    return 'The model stopped sending data and the connection timed out before the answer was complete. Please try again.'
+  }
+
+  if (isBareAbort(error)) {
+    return 'The run stopped before it finished and no cause was reported. Please try again.'
   }
 
   switch (errorType) {

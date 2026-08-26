@@ -21,6 +21,7 @@ import { ToolApiGenerator } from "./toolApiGenerator";
 import { MCPClient } from "./mcpClient";
 import { WeightedToolSelector, IChatMessage } from "../../services/weightedToolSelector";
 import { buildChatPrompt } from "../../prompts/promptBuilder";
+import { mcpDefaultServersConfig } from "../../config/mcpDefaultServers";
 import { ChatHistory } from "../../prompts/chat";
 
 // Helper function to track events using MatomoManager instance
@@ -67,56 +68,61 @@ export class MCPInferencer extends RemoteInferencer implements ICompletions, IGe
     this.initializeMCPServers(servers);
   }
 
+  private registerClient(server: IMCPServer): MCPClient {
+    const client = new MCPClient(
+      server,
+      server.transport === 'internal' ? this.remixMCPServer : undefined,
+      server.transport === 'internal' ? undefined : this.getAuthToken
+    );
+    this.mcpClients.set(server.name, client);
+    this.connectionStatuses.set(server.name, {
+      status: 'disconnected',
+      serverName: server.name
+    });
+
+    client.on('connected', async (serverName: string, result: IMCPInitializeResult) => {
+      this.connectionStatuses.set(serverName, {
+        status: 'connected',
+        serverName,
+        capabilities: result.capabilities
+      });
+      // Populate tools cache on connect
+      try {
+        const tools = await client.listTools();
+        this.toolsCache.set(serverName, tools);
+      } catch (error) {
+        this.toolsCache.set(serverName, []);
+      }
+      this.event.emit('mcpServerConnected', serverName, result);
+    });
+
+    client.on('error', (serverName: string, error: Error) => {
+      this.connectionStatuses.set(serverName, {
+        status: 'error',
+        serverName,
+        error: error.message,
+        lastAttempt: Date.now()
+      });
+      this.toolsCache.delete(serverName);
+      this.event.emit('mcpServerError', serverName, error);
+    });
+
+    client.on('disconnected', (serverName: string) => {
+      this.connectionStatuses.set(serverName, {
+        status: 'disconnected',
+        serverName
+      });
+      this.toolsCache.delete(serverName);
+      this.event.emit('mcpServerDisconnected', serverName);
+    });
+
+    return client;
+  }
+
   private initializeMCPServers(servers: IMCPServer[]): void {
     for (const server of servers) {
       if (server.enabled !== false) {
-        const client = new MCPClient(
-          server,
-          server.transport === 'internal' ? this.remixMCPServer : undefined,
-          server.transport === 'internal' ? undefined : this.getAuthToken
-        );
-        this.mcpClients.set(server.name, client);
-        this.connectionStatuses.set(server.name, {
-          status: 'disconnected',
-          serverName: server.name
-        });
-
-        // Set up event listeners
-        client.on('connected', async (serverName: string, result: IMCPInitializeResult) => {
-          this.connectionStatuses.set(serverName, {
-            status: 'connected',
-            serverName,
-            capabilities: result.capabilities
-          });
-          // Populate tools cache on connect
-          try {
-            const tools = await client.listTools();
-            this.toolsCache.set(serverName, tools);
-          } catch (error) {
-            this.toolsCache.set(serverName, []);
-          }
-          this.event.emit('mcpServerConnected', serverName, result);
-        });
-
-        client.on('error', (serverName: string, error: Error) => {
-          this.connectionStatuses.set(serverName, {
-            status: 'error',
-            serverName,
-            error: error.message,
-            lastAttempt: Date.now()
-          });
-          this.toolsCache.delete(serverName);
-          this.event.emit('mcpServerError', serverName, error);
-        });
-
-        client.on('disconnected', (serverName: string) => {
-          this.connectionStatuses.set(serverName, {
-            status: 'disconnected',
-            serverName
-          });
-          this.toolsCache.delete(serverName);
-          this.event.emit('mcpServerDisconnected', serverName);
-        });
+        this.registerClient(server);
       }
     }
   }
@@ -137,6 +143,12 @@ export class MCPInferencer extends RemoteInferencer implements ICompletions, IGe
     await Promise.allSettled(promises);
   }
 
+  async disconnectExternalServers(): Promise<void> {
+    const external = Array.from(this.mcpClients.values()).filter((c) => c.getTransport() !== 'internal');
+    await Promise.allSettled(external.map((client) => client.disconnect()));
+    this.resourceCache.clear();
+  }
+
   async disconnectAllServers(): Promise<void> {
     const promises = Array.from(this.mcpClients.values()).map(client => client.disconnect());
     await Promise.allSettled(promises);
@@ -154,44 +166,7 @@ export class MCPInferencer extends RemoteInferencer implements ICompletions, IGe
 
     trackMatomoEvent('ai', 'remixAI', `mcp_server_add_${server.name}`);
 
-    const client = new MCPClient(
-      server,
-      server.transport === 'internal' ? this.remixMCPServer : undefined,
-      server.transport === 'internal' ? undefined : this.getAuthToken
-    );
-    this.mcpClients.set(server.name, client);
-    this.connectionStatuses.set(server.name, {
-      status: 'disconnected',
-      serverName: server.name
-    });
-
-    // Set up event listeners for the new client
-    client.on('connected', (serverName: string, result: IMCPInitializeResult) => {
-      this.connectionStatuses.set(serverName, {
-        status: 'connected',
-        serverName,
-        capabilities: result.capabilities
-      });
-      this.event.emit('mcpServerConnected', serverName, result);
-    });
-
-    client.on('error', (serverName: string, error: Error) => {
-      this.connectionStatuses.set(serverName, {
-        status: 'error',
-        serverName,
-        error: error.message,
-        lastAttempt: Date.now()
-      });
-      this.event.emit('mcpServerError', serverName, error);
-    });
-
-    client.on('disconnected', (serverName: string) => {
-      this.connectionStatuses.set(serverName, {
-        status: 'disconnected',
-        serverName
-      });
-      this.event.emit('mcpServerDisconnected', serverName);
-    });
+    const client = this.registerClient(server);
 
     if (server.autoStart !== false) {
       try {
@@ -667,10 +642,75 @@ export class MCPInferencer extends RemoteInferencer implements ICompletions, IGe
     }
   }
 
-  async executeTool(serverName: string, toolCall: IMCPToolCall): Promise<IMCPToolResult> {
-    const client = this.mcpClients.get(serverName);
+  /**
+   * The built-in server runs in-process against `remixMCPServer` — it has no
+   * network, no auth and nothing to fail. It is always available whenever the
+   * inferencer holds a RemixMCPServer instance, so a missing client for it is
+   * a bookkeeping gap, not a real outage: the LangChain tools capture the
+   * inferencer they were built with, and MCPServerManager.recreateInferencer-
+   * AndConnect() removes every client from the old instance before swapping in
+   * a new one. A tool call landing on the old instance then failed with
+   * `MCP server Remix IDE Server not found`. Recreate the client instead.
+   */
+  private isInternalServer(serverName: string): boolean {
+    return mcpDefaultServersConfig.defaultServers.some(
+      (s) => s.transport === 'internal' && s.name === serverName
+    );
+  }
+
+  private async reviveInternalClient(serverName: string): Promise<MCPClient | undefined> {
+    if (!this.remixMCPServer) return undefined;
+    const definition = mcpDefaultServersConfig.defaultServers.find(
+      (s) => s.transport === 'internal' && s.name === serverName
+    ) ?? { name: serverName, transport: 'internal' as const, autoStart: true, enabled: true };
+    remixAILogger.warn(`[MCP Inferencer] "${serverName}" had no client on this inferencer — recreating the built-in server`);
+    const client = this.registerClient(definition as IMCPServer);
+    try {
+      await client.connect();
+    } catch (error) {
+      remixAILogger.error(`[MCP Inferencer] Failed to connect the built-in server "${serverName}":`, error);
+      this.mcpClients.delete(serverName);
+      return undefined;
+    }
+    return client;
+  }
+
+  private async resolveClientForTool(serverName: string, toolName: string): Promise<MCPClient | undefined> {
+    let client = this.mcpClients.get(serverName);
+
+    if (!client && this.isInternalServer(serverName)) {
+      client = await this.reviveInternalClient(serverName);
+    }
+
     if (!client) {
-      throw new Error(`MCP server ${serverName} not found`);
+      for (const [name, candidate] of this.mcpClients) {
+        if (!candidate.isConnected()) continue;
+        if ((this.toolsCache.get(name) ?? []).some((t) => t.name === toolName)) {
+          remixAILogger.warn(`[MCP Inferencer] "${serverName}" is unknown — "${toolName}" is served by "${name}", routing there`);
+          client = candidate;
+          break;
+        }
+      }
+    }
+
+    if (client && !client.isConnected()) {
+      try {
+        await client.connect();
+      } catch (error) {
+        remixAILogger.warn(`[MCP Inferencer] Reconnect to "${serverName}" failed:`, error);
+      }
+    }
+
+    return client;
+  }
+
+  async executeTool(serverName: string, toolCall: IMCPToolCall): Promise<IMCPToolResult> {
+    const client = await this.resolveClientForTool(serverName, toolCall.name);
+    if (!client) {
+      const known = Array.from(this.mcpClients.keys());
+      throw new Error(
+        `MCP server ${serverName} not found. Known servers: ${known.length ? known.join(', ') : '(none)'}`
+      );
     }
 
     if (!client.isConnected()) {

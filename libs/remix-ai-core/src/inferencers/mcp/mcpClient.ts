@@ -700,6 +700,10 @@ export class MCPClient {
     return this.server.name;
   }
 
+  getTransport(): string {
+    return this.server.transport;
+  }
+
   on(event: string, listener: (...args: any[]) => void): void {
     this.eventEmitter.on(event, listener);
   }

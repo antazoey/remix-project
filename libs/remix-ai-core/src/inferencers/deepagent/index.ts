@@ -7,6 +7,7 @@ export {
   ToolApprovalGate,
   createRemixTools,
   jsonSchemaToZod,
+  withTolerantKeys,
   mcpResultToString,
   resolveToolUIString
 } from './tools'

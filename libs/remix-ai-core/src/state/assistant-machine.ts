@@ -20,7 +20,7 @@
 import { setup, createActor, type AnyActorRef } from 'xstate'
 import type { PermissionsResponse } from '@remix-api'
 import { Features } from '@remix-api'
-import { ANONYMOUS_FALLBACK_MODELS, parseAIModelsFromPermissions, curateOpenRouterBrandedModels, isOpenRouterRouted, type AIModel } from '../types/models'
+import { ANONYMOUS_FALLBACK_MODELS, parseAIModelsFromPermissions, curateOpenRouterBrandedModels, isOpenRouterRouted, isAutoModelId, type AIModel } from '../types/models'
 
 // ─── Public types ───────────────────────────────────────────────────
 
@@ -642,7 +642,7 @@ export function selectAvailableModels(snap: AssistantSnapshot): AIModel[] {
  * and the caller must wait (or reject loudly).
  */
 export function selectDefaultModel(snap: AssistantSnapshot): AIModel | null {
-  const models = selectAvailableModels(snap)
+  const models = selectAvailableModels(snap).filter((m) => !isAutoModelId(m.id))
   if (!models.length) return null
   // OpenRouter is the default router: among `available` rows flagged
   // is_default, an OpenRouter-routed one wins. Only when the backend advertises
