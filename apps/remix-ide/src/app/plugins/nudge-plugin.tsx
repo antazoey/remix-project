@@ -3,7 +3,7 @@ import React from 'react'
 import { PluginViewWrapper } from '@remix-ui/helper'
 import { NudgeEngine, all, any } from '@remix-project/remix-lib'
 import { PRO_DEMOS } from '@remix-ui/modal-help'
-import { isMigrationPromptSnoozed, parseMigrationConfig, shouldPromptMigration } from '@remix-ui/domain-migration'
+import { isMigrationHandoff, isMigrationPromptSnoozed, parseMigrationConfig, shouldPromptMigration } from '@remix-ui/domain-migration'
 import type { NudgeRule, NudgeAction, SerializedNudgeRule } from '@remix-project/remix-lib'
 import { trackMatomoEvent as baseTrackMatomoEvent, NudgeEvent, MatomoEvent, Features, PendingCheckout } from '@remix-api'
 import * as packageJson from '../../../../../package.json'
@@ -358,9 +358,10 @@ export class NudgePlugin extends Plugin {
       }
 
       // Domain migration — only prompt on an origin that is actually being
-      // retired, and only if the user hasn't snoozed it.
+      // retired, and only if the user hasn't snoozed it or already arrived
+      // here from the handoff link with the wizard open.
       const migration = parseMigrationConfig(getConfigValue)
-      if (shouldPromptMigration(migration) && !isMigrationPromptSnoozed(migration.toDomain)) {
+      if (shouldPromptMigration(migration) && !isMigrationPromptSnoozed(migration.toDomain) && !isMigrationHandoff()) {
         this.log('[NudgePlugin] Migration required ->', migration.toDomain)
         this.engine_.fire('config:migration_required')
       }

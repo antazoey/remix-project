@@ -18,7 +18,7 @@ export class DomainMigrationPlugin extends ViewPlugin {
   dispatch: React.Dispatch<any> = () => {}
   appManager: RemixAppManager
   element: HTMLDivElement
-  payload: { mode?: 'export' | 'import'; targetOrigin?: string }
+  payload: { mode?: 'export' | 'import'; targetOrigin?: string; deadline?: string | null }
 
   constructor(appManager: RemixAppManager) {
     super(profile)
@@ -48,7 +48,8 @@ export class DomainMigrationPlugin extends ViewPlugin {
       const raw: any = await this.call('auth' as any, 'getAppConfig')
       const read = (key: string) =>
         Array.isArray(raw) ? raw.find((entry: any) => entry?.key === key)?.value : raw?.[key]
-      this.payload = { ...this.payload, targetOrigin: parseMigrationConfig(read).toDomain || undefined }
+      const config = parseMigrationConfig(read)
+      this.payload = { ...this.payload, targetOrigin: config.toDomain || undefined, deadline: config.deadline }
       this.renderComponent()
     } catch {
       // Auth not ready — the wizard falls back to copy without a handoff link.
@@ -73,6 +74,13 @@ export class DomainMigrationPlugin extends ViewPlugin {
   }
 
   updateComponent(state: any) {
-    return <DomainMigration plugin={this} targetOrigin={state?.targetOrigin} initialMode={state?.mode} />
+    return (
+      <DomainMigration
+        plugin={this}
+        targetOrigin={state?.targetOrigin}
+        deadline={state?.deadline}
+        initialMode={state?.mode}
+      />
+    )
   }
 }

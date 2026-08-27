@@ -52,8 +52,29 @@ export function shouldPromptMigration(config: MigrationConfig, host: string = wi
   return config.fromDomains.includes(current)
 }
 
-// ─── Prompt snoozing ─────────────────────────────────────────────
+/** Query param set by the handoff link on the old domain. */
+export const HANDOFF_PARAM = 'migrate'
 
+/**
+ * True when this page was opened from a handoff link. The wizard is already
+ * on screen in that case, so announcing the move again would only be noise.
+ *
+ * Read-only on purpose: `QueryParams.get()` rewrites `window.location`.
+ */
+export function isMigrationHandoff(
+  hash: string = window.location.hash,
+  search: string = window.location.search
+): boolean {
+  try {
+    const inHash = new URLSearchParams(hash.replace(/^#/, '')).get(HANDOFF_PARAM)
+    const inSearch = new URLSearchParams(search).get(HANDOFF_PARAM)
+    return !!(inHash || inSearch)
+  } catch {
+    return false
+  }
+}
+
+// ─── Prompt snoozing ─────────────────────────────────────────────
 /** Keyed on the destination so a changed target re-opens the conversation. */
 export const migrationDismissKey = (toDomain: string) => `remix:domain-migration:${toDomain}`
 

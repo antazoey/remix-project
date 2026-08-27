@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { estimateStorage, formatBytes, getFs, MigrationPreview, previewFileSystem, StorageEstimate } from '../archive'
 import { ExportResult, exportArchive, pickSaveTarget } from '../exporter'
 import { clearResumeState, importArchive, OpenedArchive, openArchive, readResumeState } from '../importer'
@@ -8,16 +8,18 @@ export interface DomainMigrationProps {
   plugin?: any
   /** Host users are being moved to, e.g. 'app.remix.live'. */
   targetOrigin?: string
+  /** ISO date the old origin stops being updated. */
+  deadline?: string | null
   /** 'import' when arriving on the new domain via the handoff link. */
   initialMode?: 'export' | 'import'
 }
 
 type Stage = 'export' | 'handoff' | 'import'
 
-const STEPS: { id: Stage; label: string }[] = [
-  { id: 'export', label: 'Export here' },
-  { id: 'handoff', label: 'Open new site' },
-  { id: 'import', label: 'Import there' }
+const STEPS: { id: Stage; label: string; hint: string }[] = [
+  { id: 'export', label: 'Export', hint: 'Pack your projects' },
+  { id: 'handoff', label: 'Move over', hint: 'Open the new site' },
+  { id: 'import', label: 'Import', hint: 'Restore them there' }
 ]
 
 const phaseLabels: Record<string, string> = {
@@ -29,7 +31,38 @@ const phaseLabels: Record<string, string> = {
   done: 'Finished'
 }
 
-export const DomainMigration: React.FC<DomainMigrationProps> = ({ plugin, targetOrigin, initialMode }) => {
+// Mirrors the help modals so the flow from announcement to wizard feels continuous.
+const c = {
+  bg: '#1a1a2e',
+  s1: '#222240',
+  s2: '#2a2a4a',
+  cy: '#2fbfb1',
+  tx: '#e0e0ec',
+  tm: '#8888aa',
+  td: '#5c5c7a',
+  pu: '#9b7dff',
+  am: '#f0a030',
+  gn: '#6bdb8a',
+  rd: '#e8686b'
+}
+
+const KEYFRAMES = `
+  @keyframes dmwIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes dmwDrift { 0%,100% { transform: translateX(0); } 50% { transform: translateX(4px); } }
+  @keyframes dmwPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.55; } }
+`
+
+const mono = "'JetBrains Mono', monospace"
+const sans = "'DM Sans', sans-serif"
+
+function daysUntil(iso: string | null | undefined): number | null {
+  if (!iso) return null
+  const t = Date.parse(iso)
+  if (Number.isNaN(t)) return null
+  return Math.max(0, Math.floor((t - Date.now()) / 86400000))
+}
+
+export const DomainMigration: React.FC<DomainMigrationProps> = ({ targetOrigin, deadline, initialMode }) => {
   const [stage, setStage] = useState<Stage>(initialMode === 'import' ? 'import' : 'export')
   const [storage, setStorage] = useState<StorageEstimate | null>(null)
   const [preview, setPreview] = useState<MigrationPreview | null>(null)
@@ -44,7 +77,9 @@ export const DomainMigration: React.FC<DomainMigrationProps> = ({ plugin, target
   const [dragging, setDragging] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
 
+  const destination = targetOrigin || 'the new site'
   const handoffUrl = targetOrigin ? `https://${targetOrigin}/#migrate=import` : null
+  const days = useMemo(() => daysUntil(deadline), [deadline])
 
   useEffect(() => {
     estimateStorage().then(setStorage)
@@ -122,284 +157,408 @@ export const DomainMigration: React.FC<DomainMigrationProps> = ({ plugin, target
   }
 
   return (
-    <div className="p-4 overflow-auto h-100" data-id="domainMigration">
-      <h4 className="mb-1">Move your projects</h4>
-      <p className="text-secondary small mb-4">
-        Your files are stored by this browser under <strong>{window.location.host}</strong> and cannot follow you to a
-        new address on their own. This takes three steps.
-      </p>
+    <div
+      data-id="domainMigration"
+      style={{ background: c.bg, color: c.tx, fontFamily: sans, height: '100%', overflowY: 'auto' }}
+    >
+      <style>{KEYFRAMES}</style>
 
-      <Stepper current={stage} />
+      <div style={{ maxWidth: 780, margin: '0 auto', padding: '32px 24px 48px' }}>
+        <Hero destination={destination} targetOrigin={targetOrigin} days={days} />
+        <WhyPanel destination={destination} />
+        <Stepper current={stage} />
 
-      {stage === 'export' && (
-        <section data-id="domainMigrationExport">
-          <StepHeading n={1} title="Export your projects to a file" />
+        <div style={{ animation: 'dmwIn 0.3s ease' }}>
+          {stage === 'export' && (
+            <Card accent={c.cy} data-id="domainMigrationExport">
+              <CardTitle step={1} accent={c.cy}>Pack your projects into one file</CardTitle>
 
-          {preview && (
-            <div className="border rounded p-3 mb-3" data-id="domainMigrationPreview">
-              <div className="small mb-1">
-                <strong>{preview.workspaces.length}</strong> workspaces · <strong>{preview.fileCount}</strong> files ·{' '}
-                {formatBytes(preview.totalBytes)}
-              </div>
-              {preview.workspaces.length > 0 && (
-                <div className="small text-secondary">{preview.workspaces.join(', ')}</div>
-              )}
-              {preview.cloudWorkspaces.length > 0 && (
-                <div className="small text-secondary mt-2">
-                  <i className="fas fa-cloud me-1" />
-                  {preview.cloudWorkspaces.length} cloud workspace
-                  {preview.cloudWorkspaces.length > 1 ? 's are' : ' is'} not included — sign in on the new site and they
-                  sync back automatically.
-                </div>
-              )}
-            </div>
-          )}
-
-          <button className="btn btn-primary" onClick={onExport} disabled={busy} data-id="domainMigrationExportBtn">
-            {busy ? 'Exporting…' : 'Export my projects'}
-          </button>
-          <p className="small text-secondary mt-2 mb-0">
-            Your browser will ask where to save the file. Every file is checksummed so the import can verify it.
-          </p>
-        </section>
-      )}
-
-      {stage === 'handoff' && (
-        <section data-id="domainMigrationHandoff">
-          <StepHeading n={2} title="Open the new site and continue there" />
-
-          {exportResult && (
-            <div className="alert alert-success py-2" data-id="domainMigrationExportDone">
-              Saved <code>{exportResult.fileName}</code> — {exportResult.manifest.totalFiles} files (
-              {formatBytes(exportResult.manifest.totalBytes)}).
-            </div>
-          )}
-
-          <p className="small mb-3">
-            The link below opens {targetOrigin ? <strong>{targetOrigin}</strong> : 'the new site'} and takes you straight
-            to the import step, where you will be asked for the file you just saved.
-          </p>
-
-          {handoffUrl ? (
-            <>
-              <div className="d-flex flex-wrap gap-2 mb-2">
-                <a
-                  className="btn btn-primary"
-                  href={handoffUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  data-id="domainMigrationHandoffLink"
-                >
-                  <i className="fas fa-arrow-up-right-from-square me-2" />
-                  Open {targetOrigin} and import
-                </a>
-                <button className="btn btn-secondary" onClick={copyHandoff} data-id="domainMigrationCopyLink">
-                  <i className={`fas ${copied ? 'fa-check' : 'fa-copy'} me-2`} />
-                  {copied ? 'Copied' : 'Copy link'}
-                </button>
-              </div>
-              <p className="small text-secondary">
-                Keep this tab open until the import has finished, in case you need to export again.
-              </p>
-            </>
-          ) : (
-            <div className="alert alert-warning small">
-              The new address has not been configured yet. Keep the exported file safe and import it once the new site is
-              announced.
-            </div>
-          )}
-
-          <button
-            className="btn btn-link btn-sm ps-0"
-            onClick={() => setStage('export')}
-            data-id="domainMigrationBackToExport"
-          >
-            <i className="fas fa-arrow-left me-1" /> Export again
-          </button>
-        </section>
-      )}
-
-      {stage === 'import' && (
-        <section data-id="domainMigrationImport">
-          <StepHeading n={3} title="Import the file you exported" />
-
-          {!archive && !importResult && (
-            <div
-              className={`border rounded p-4 text-center mb-3 ${dragging ? 'border-primary' : 'border-secondary'}`}
-              style={{ borderStyle: 'dashed', cursor: 'pointer' }}
-              onClick={() => fileInput.current?.click()}
-              onDragOver={(e) => {
-                e.preventDefault()
-                setDragging(true)
-              }}
-              onDragLeave={() => setDragging(false)}
-              onDrop={(e) => {
-                e.preventDefault()
-                setDragging(false)
-                const file = e.dataTransfer.files?.[0]
-                if (file) onPickArchive(file)
-              }}
-              data-id="domainMigrationDropzone"
-            >
-              <i className="fas fa-file-archive fa-2x text-secondary mb-2 d-block" />
-              <div className="fw-bold">Drop your migration archive here</div>
-              <div className="small text-secondary">or click to browse for the .zip you exported</div>
-            </div>
-          )}
-
-          <input
-            ref={fileInput}
-            type="file"
-            accept=".zip,application/zip"
-            className="d-none"
-            disabled={busy}
-            data-id="domainMigrationFileInput"
-            onChange={(e) => {
-              const file = e.target.files?.[0]
-              if (file) onPickArchive(file)
-            }}
-          />
-
-          {archive && !importResult && (
-            <div className="border rounded p-3 mb-3" data-id="domainMigrationSummary">
-              <div className="small">
-                <strong>{archive.manifest.totalFiles}</strong> files ({formatBytes(archive.manifest.totalBytes)}) from{' '}
-                <strong>{archive.manifest.sourceOrigin}</strong>
-              </div>
-              <div className="small text-secondary">
-                Exported {new Date(archive.manifest.createdAt).toLocaleString()} ·{' '}
-                {archive.manifest.workspaces.length} workspaces ·{' '}
-                {Object.keys(archive.manifest.config || {}).length} settings
-              </div>
-
-              {canResume && (
-                <div className="alert alert-info mt-3 mb-0 py-2 small" data-id="domainMigrationResume">
-                  A previous import of this archive was interrupted. You can carry on where it stopped.
-                </div>
+              {preview ? (
+                <>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
+                    <Stat label="Workspaces" value={String(preview.workspaces.length)} accent={c.cy} />
+                    <Stat label="Files" value={String(preview.fileCount)} accent={c.pu} />
+                    <Stat label="Size" value={formatBytes(preview.totalBytes)} accent={c.gn} />
+                  </div>
+                  {preview.workspaces.length > 0 && (
+                    <div style={{ fontSize: 11.5, color: c.tm, marginBottom: 12, lineHeight: 1.5 }}>
+                      Including: {preview.workspaces.map((w) => <Tag key={w}>{w}</Tag>)}
+                    </div>
+                  )}
+                  {preview.cloudWorkspaces.length > 0 && (
+                    <Note color={c.pu} icon="fas fa-cloud">
+                      {preview.cloudWorkspaces.length} cloud workspace{preview.cloudWorkspaces.length > 1 ? 's' : ''}{' '}
+                      {preview.cloudWorkspaces.length > 1 ? 'are' : 'is'} <strong style={{ color: c.tx }}>not</strong> in
+                      the archive — they already live in the cloud and come back when you sign in on {destination}.
+                    </Note>
+                  )}
+                </>
+              ) : (
+                <div style={{ fontSize: 12.5, color: c.tm, marginBottom: 14 }}>Looking at your projects…</div>
               )}
 
-              <div className="mt-3 d-flex gap-2 align-items-center">
-                {canResume && (
-                  <button
-                    className="btn btn-primary btn-sm"
-                    disabled={busy}
-                    onClick={() => onImport(true)}
-                    data-id="domainMigrationResumeBtn"
-                  >
-                    Resume import
-                  </button>
-                )}
-                <button
-                  className={`btn btn-sm ${canResume ? 'btn-secondary' : 'btn-primary'}`}
-                  disabled={busy}
-                  onClick={() => {
-                    clearResumeState(archive.archiveId)
-                    setCanResume(false)
-                    onImport(false)
+              <div style={{ marginTop: 16 }}>
+                <PrimaryButton onClick={onExport} disabled={busy} dataId="domainMigrationExportBtn">
+                  <i className="fas fa-box-archive" />
+                  {busy ? 'Exporting…' : 'Export my projects'}
+                </PrimaryButton>
+              </div>
+              <div style={{ fontSize: 11.5, color: c.td, marginTop: 10, lineHeight: 1.5 }}>
+                Your browser will ask where to save the file. Every file gets a checksum so the import on {destination}{' '}
+                can prove nothing was damaged on the way.
+              </div>
+            </Card>
+          )}
+
+          {stage === 'handoff' && (
+            <Card accent={c.pu} data-id="domainMigrationHandoff">
+              <CardTitle step={2} accent={c.pu}>Take the file to {destination}</CardTitle>
+
+              {exportResult && (
+                <Note color={c.gn} icon="fas fa-circle-check" dataId="domainMigrationExportDone">
+                  Saved <code style={{ color: c.tx, fontFamily: mono }}>{exportResult.fileName}</code> —{' '}
+                  {exportResult.manifest.totalFiles} files ({formatBytes(exportResult.manifest.totalBytes)}). Check your
+                  downloads folder if you can&apos;t see it.
+                </Note>
+              )}
+
+              <div style={{ fontSize: 12.5, color: c.tm, lineHeight: 1.6, margin: '14px 0' }}>
+                The button below opens <strong style={{ color: c.cy, fontFamily: mono }}>{destination}</strong> in a new
+                tab and jumps straight to the import step. You&apos;ll be asked for the file you just saved.
+              </div>
+
+              {handoffUrl ? (
+                <>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    <PrimaryButton href={handoffUrl} dataId="domainMigrationHandoffLink">
+                      <i className="fas fa-arrow-up-right-from-square" />
+                      Open {targetOrigin} and import
+                    </PrimaryButton>
+                    <GhostButton onClick={copyHandoff} dataId="domainMigrationCopyLink">
+                      <i className={`fas ${copied ? 'fa-check' : 'fa-copy'}`} /> {copied ? 'Copied' : 'Copy link'}
+                    </GhostButton>
+                  </div>
+                  <Note color={c.am} icon="fas fa-lightbulb">
+                    Keep this tab open until the import has finished, in case you need to export again.
+                  </Note>
+                </>
+              ) : (
+                <Note color={c.am} icon="fas fa-triangle-exclamation">
+                  The new address hasn&apos;t been configured yet. Keep the exported file safe and import it once the new
+                  site is announced.
+                </Note>
+              )}
+
+              <BackLink onClick={() => setStage('export')} dataId="domainMigrationBackToExport">
+                Export again
+              </BackLink>
+            </Card>
+          )}
+
+          {stage === 'import' && (
+            <Card accent={c.gn} data-id="domainMigrationImport">
+              <CardTitle step={3} accent={c.gn}>Restore your projects here</CardTitle>
+
+              {!archive && !importResult && (
+                <div
+                  onClick={() => fileInput.current?.click()}
+                  onDragOver={(e) => {
+                    e.preventDefault()
+                    setDragging(true)
                   }}
-                  data-id="domainMigrationImportBtn"
+                  onDragLeave={() => setDragging(false)}
+                  onDrop={(e) => {
+                    e.preventDefault()
+                    setDragging(false)
+                    const file = e.dataTransfer.files?.[0]
+                    if (file) onPickArchive(file)
+                  }}
+                  data-id="domainMigrationDropzone"
+                  style={{
+                    borderRadius: 12,
+                    border: `1.5px dashed ${dragging ? c.cy : 'rgba(255,255,255,0.14)'}`,
+                    background: dragging ? 'rgba(47,191,177,0.08)' : 'rgba(255,255,255,0.02)',
+                    padding: '32px 20px',
+                    textAlign: 'center',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
                 >
-                  {canResume ? 'Start over' : busy ? 'Importing…' : 'Import everything'}
-                </button>
-                <button className="btn btn-sm btn-link" disabled={busy} onClick={() => setArchive(null)}>
-                  Choose a different file
-                </button>
-              </div>
-            </div>
-          )}
-
-          {importResult && (
-            <div className="alert alert-success" data-id="domainMigrationImportDone">
-              <div>
-                Restored <strong>{importResult.imported}</strong> files
-                {importResult.skipped > 0 && <> ({importResult.skipped} already done)</>}, applied{' '}
-                {importResult.configApplied} settings.
-              </div>
-              {Object.keys(importResult.renamedWorkspaces).length > 0 && (
-                <div className="small mt-2">
-                  Renamed to avoid overwriting existing workspaces:{' '}
-                  {Object.entries(importResult.renamedWorkspaces)
-                    .map(([from, to]) => `${from} → ${to}`)
-                    .join(', ')}
+                  <div style={{
+                    width: 48, height: 48, borderRadius: 12, margin: '0 auto 12px',
+                    background: 'rgba(47,191,177,0.12)', border: '0.5px solid rgba(47,191,177,0.28)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                  }}>
+                    <i className="fas fa-file-arrow-down" style={{ color: c.cy, fontSize: 20 }} />
+                  </div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: c.tx, marginBottom: 4 }}>
+                    Drop your migration archive here
+                  </div>
+                  <div style={{ fontSize: 12, color: c.tm }}>
+                    or click to browse for the <code style={{ fontFamily: mono }}>.zip</code> you exported
+                  </div>
                 </div>
               )}
-              <button
-                className="btn btn-sm btn-primary mt-2"
-                onClick={() => window.location.reload()}
-                data-id="domainMigrationReload"
-              >
-                Reload Remix to see your projects
-              </button>
-            </div>
-          )}
 
-          {importResult && importResult.issues.length > 0 && (
-            <div className="alert alert-warning" data-id="domainMigrationIssues">
-              <strong>{importResult.issues.length} files could not be restored.</strong>
-              <ul className="small mt-2 mb-0 ps-3">
-                {importResult.issues.slice(0, 10).map((issue) => (
-                  <li key={issue.path}>
-                    <code>{issue.path}</code> — {issue.reason}
-                  </li>
-                ))}
-              </ul>
-              {importResult.issues.length > 10 && (
-                <div className="small mt-1">…and {importResult.issues.length - 10} more.</div>
+              <input
+                ref={fileInput}
+                type="file"
+                accept=".zip,application/zip"
+                style={{ display: 'none' }}
+                disabled={busy}
+                data-id="domainMigrationFileInput"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file) onPickArchive(file)
+                }}
+              />
+
+              {archive && !importResult && (
+                <div data-id="domainMigrationSummary">
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+                    <Stat label="Files" value={String(archive.manifest.totalFiles)} accent={c.cy} />
+                    <Stat label="Size" value={formatBytes(archive.manifest.totalBytes)} accent={c.pu} />
+                    <Stat label="Workspaces" value={String(archive.manifest.workspaces.length)} accent={c.gn} />
+                  </div>
+                  <div style={{ fontSize: 11.5, color: c.tm, marginBottom: 12 }}>
+                    From <strong style={{ color: c.tx, fontFamily: mono }}>{archive.manifest.sourceOrigin}</strong>,
+                    exported {new Date(archive.manifest.createdAt).toLocaleString()} ·{' '}
+                    {Object.keys(archive.manifest.config || {}).length} settings
+                  </div>
+
+                  {canResume && (
+                    <Note color={c.am} icon="fas fa-rotate-left" dataId="domainMigrationResume">
+                      A previous import of this archive was interrupted. You can carry on where it stopped.
+                    </Note>
+                  )}
+
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 14, alignItems: 'center' }}>
+                    {canResume && (
+                      <PrimaryButton onClick={() => onImport(true)} disabled={busy} dataId="domainMigrationResumeBtn">
+                        <i className="fas fa-rotate-left" /> Resume import
+                      </PrimaryButton>
+                    )}
+                    {canResume ? (
+                      <GhostButton
+                        onClick={() => {
+                          clearResumeState(archive.archiveId)
+                          setCanResume(false)
+                          onImport(false)
+                        }}
+                        disabled={busy}
+                        dataId="domainMigrationImportBtn"
+                      >
+                        Start over
+                      </GhostButton>
+                    ) : (
+                      <PrimaryButton onClick={() => onImport(false)} disabled={busy} dataId="domainMigrationImportBtn">
+                        <i className="fas fa-download" /> {busy ? 'Importing…' : 'Import everything'}
+                      </PrimaryButton>
+                    )}
+                    <GhostButton onClick={() => setArchive(null)} disabled={busy}>
+                      Choose another file
+                    </GhostButton>
+                  </div>
+                </div>
               )}
-            </div>
+
+              {importResult && (
+                <div data-id="domainMigrationImportDone">
+                  <Note color={c.gn} icon="fas fa-circle-check">
+                    Restored <strong style={{ color: c.tx }}>{importResult.imported}</strong> files
+                    {importResult.skipped > 0 && <> ({importResult.skipped} already done)</>} and applied{' '}
+                    {importResult.configApplied} settings.
+                  </Note>
+                  {Object.keys(importResult.renamedWorkspaces).length > 0 && (
+                    <Note color={c.am} icon="fas fa-tag">
+                      Renamed to avoid overwriting workspaces already here:{' '}
+                      {Object.entries(importResult.renamedWorkspaces)
+                        .map(([from, to]) => `${from} → ${to}`)
+                        .join(', ')}
+                    </Note>
+                  )}
+                  {importResult.issues.length > 0 && (
+                    <Note color={c.rd} icon="fas fa-triangle-exclamation" dataId="domainMigrationIssues">
+                      <strong style={{ color: c.tx }}>
+                        {importResult.issues.length} files could not be restored.
+                      </strong>
+                      <ul style={{ margin: '6px 0 0', paddingLeft: 16 }}>
+                        {importResult.issues.slice(0, 8).map((issue) => (
+                          <li key={issue.path} style={{ fontFamily: mono, fontSize: 10.5 }}>
+                            {issue.path} — {issue.reason}
+                          </li>
+                        ))}
+                      </ul>
+                      {importResult.issues.length > 8 && (
+                        <div style={{ marginTop: 4 }}>…and {importResult.issues.length - 8} more.</div>
+                      )}
+                    </Note>
+                  )}
+                  <div style={{ marginTop: 14 }}>
+                    <PrimaryButton onClick={() => window.location.reload()} dataId="domainMigrationReload">
+                      <i className="fas fa-rotate-right" /> Reload Remix to see your projects
+                    </PrimaryButton>
+                  </div>
+                </div>
+              )}
+
+              {!importResult && (
+                <BackLink onClick={() => setStage('export')} dataId="domainMigrationBackFromImport">
+                  I need to export from the old site first
+                </BackLink>
+              )}
+            </Card>
           )}
-
-          {!importResult && (
-            <button
-              className="btn btn-link btn-sm ps-0"
-              onClick={() => setStage('export')}
-              data-id="domainMigrationBackFromImport"
-            >
-              <i className="fas fa-arrow-left me-1" /> I need to export first
-            </button>
-          )}
-        </section>
-      )}
-
-      {progress && progress.phase !== 'done' && <Progress progress={progress} />}
-
-      {error && (
-        <div className="alert alert-danger mt-3" data-id="domainMigrationError">
-          {error}
         </div>
-      )}
 
-      {storage?.known && (
-        <p className="small text-secondary mt-4 mb-0" data-id="domainMigrationStorage">
-          Browser storage: {formatBytes(storage.usage)} used of {formatBytes(storage.quota)} (
-          {formatBytes(storage.available)} free)
-        </p>
-      )}
+        {progress && progress.phase !== 'done' && <Progress progress={progress} />}
+
+        {error && (
+          <Note color={c.rd} icon="fas fa-circle-exclamation" dataId="domainMigrationError">
+            {error}
+          </Note>
+        )}
+
+        {storage?.known && (
+          <div
+            data-id="domainMigrationStorage"
+            style={{ fontSize: 11, color: c.td, marginTop: 24, fontFamily: mono, textAlign: 'center' }}
+          >
+            browser storage · {formatBytes(storage.usage)} used of {formatBytes(storage.quota)} ·{' '}
+            {formatBytes(storage.available)} free
+          </div>
+        )}
+      </div>
     </div>
   )
 }
 
+/* ─── Hero ─── */
+
+const Hero: React.FC<{ destination: string; targetOrigin?: string; days: number | null }> = ({
+  destination,
+  targetOrigin,
+  days
+}) => (
+  <div style={{
+    position: 'relative', overflow: 'hidden',
+    borderRadius: 18, border: '0.5px solid rgba(47,191,177,0.18)',
+    padding: '26px 24px', marginBottom: 18
+  }}>
+    <div style={{
+      position: 'absolute', inset: 0,
+      background: 'linear-gradient(135deg, rgba(47,191,177,0.10) 0%, rgba(155,125,255,0.06) 50%, rgba(240,160,48,0.07) 100%)'
+    }} />
+    <div style={{
+      position: 'absolute', inset: 0, opacity: 0.04,
+      backgroundImage: 'linear-gradient(rgba(255,255,255,0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.3) 1px, transparent 1px)',
+      backgroundSize: '24px 24px'
+    }} />
+
+    <div style={{ position: 'relative', zIndex: 2 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+        <div style={{
+          width: 38, height: 38, borderRadius: 10,
+          background: 'rgba(47,191,177,0.12)', border: '0.5px solid rgba(47,191,177,0.28)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          animation: 'dmwDrift 3s ease-in-out infinite'
+        }}>
+          <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke={c.cy} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M2 8h9M8 5l3 3-3 3M13 2v12" />
+          </svg>
+        </div>
+        <div>
+          <div style={{ fontSize: 16, fontWeight: 600 }}>Remix is moving</div>
+          <div style={{ fontSize: 11, color: c.cy, fontFamily: mono, letterSpacing: 0.5 }}>New home</div>
+        </div>
+      </div>
+
+      <div style={{ fontSize: 24, fontWeight: 600, lineHeight: 1.25, marginBottom: 10 }}>
+        Move your data to{' '}
+        <span style={{ color: c.cy, fontFamily: mono, fontSize: 21 }}>{destination}</span>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontFamily: mono, fontSize: 11 }}>
+        <span style={{
+          color: c.tm, background: 'rgba(255,255,255,0.03)', border: '0.5px solid rgba(255,255,255,0.06)',
+          borderRadius: 6, padding: '4px 8px', textDecoration: 'line-through'
+        }}>
+          {window.location.host}
+        </span>
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke={c.td} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 8h10M9 4l4 4-4 4" />
+        </svg>
+        <span style={{
+          color: c.cy, background: 'rgba(47,191,177,0.08)', border: '0.5px solid rgba(47,191,177,0.28)',
+          borderRadius: 6, padding: '4px 8px', fontWeight: 600
+        }}>
+          {targetOrigin || 'coming soon'}
+        </span>
+        {days !== null && (
+          <span style={{
+            color: days <= 7 ? c.am : c.tm,
+            background: days <= 7 ? 'rgba(240,160,48,0.08)' : 'rgba(255,255,255,0.03)',
+            border: `0.5px solid ${days <= 7 ? 'rgba(240,160,48,0.28)' : 'rgba(255,255,255,0.06)'}`,
+            borderRadius: 6, padding: '4px 8px',
+            animation: days <= 7 ? 'dmwPulse 2s ease-in-out infinite' : undefined
+          }}>
+            {days === 0 ? 'updates ending' : `${days}d of updates left`}
+          </span>
+        )}
+      </div>
+    </div>
+  </div>
+)
+
+const WhyPanel: React.FC<{ destination: string }> = ({ destination }) => (
+  <div style={{
+    borderRadius: 12, padding: '14px 16px', marginBottom: 22,
+    background: 'rgba(255,255,255,0.02)', border: '0.5px solid rgba(255,255,255,0.06)',
+    fontSize: 12.5, color: c.tm, lineHeight: 1.6
+  }}>
+    Your workspaces are saved by <strong style={{ color: c.tx }}>your browser</strong>, not by Remix&apos;s servers — and
+    browsers keep that storage locked to one address. Nothing on{' '}
+    <strong style={{ color: c.tx, fontFamily: mono }}>{window.location.host}</strong> can reach {destination} on its own,
+    so you need to carry it across once. It takes a couple of minutes, and{' '}
+    <strong style={{ color: c.gn }}>nothing is deleted here</strong> — what you export is a copy.
+  </div>
+)
+
+/* ─── Stepper ─── */
+
 const Stepper: React.FC<{ current: Stage }> = ({ current }) => {
   const currentIndex = STEPS.findIndex((s) => s.id === current)
   return (
-    <div className="d-flex align-items-center mb-4" data-id="domainMigrationStepper">
+    <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: 22 }} data-id="domainMigrationStepper">
       {STEPS.map((step, i) => {
         const done = i < currentIndex
         const active = i === currentIndex
+        const accent = done ? c.gn : active ? c.cy : c.td
         return (
           <React.Fragment key={step.id}>
-            <div className="d-flex align-items-center gap-2">
-              <span
-                className={`d-inline-flex align-items-center justify-content-center rounded-circle ${
-                  active ? 'bg-primary text-white' : done ? 'bg-success text-white' : 'bg-secondary text-white'
-                }`}
-                style={{ width: 26, height: 26, fontSize: 12, fontWeight: 600, opacity: active || done ? 1 : 0.45 }}
-              >
-                {done ? <i className="fas fa-check" /> : i + 1}
-              </span>
-              <span className={`small ${active ? 'fw-bold' : 'text-secondary'}`}>{step.label}</span>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, minWidth: 84 }}>
+              <div style={{
+                width: 30, height: 30, borderRadius: 9,
+                background: active || done ? `${accent}1f` : 'rgba(255,255,255,0.03)',
+                border: `0.5px solid ${active || done ? `${accent}59` : 'rgba(255,255,255,0.06)'}`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: accent, fontSize: 12, fontWeight: 700, fontFamily: mono
+              }}>
+                {done ? <i className="fas fa-check" style={{ fontSize: 11 }} /> : i + 1}
+              </div>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 12, fontWeight: active ? 600 : 500, color: active || done ? c.tx : c.td }}>
+                  {step.label}
+                </div>
+                <div style={{ fontSize: 10, color: c.td }}>{step.hint}</div>
+              </div>
             </div>
-            {i < STEPS.length - 1 && <div className="flex-fill border-top mx-2" style={{ minWidth: 16 }} />}
+            {i < STEPS.length - 1 && (
+              <div style={{
+                flex: 1, height: 1, marginTop: 15,
+                background: i < currentIndex ? `${c.gn}59` : 'rgba(255,255,255,0.08)'
+              }} />
+            )}
           </React.Fragment>
         )
       })}
@@ -407,35 +566,195 @@ const Stepper: React.FC<{ current: Stage }> = ({ current }) => {
   )
 }
 
-const StepHeading: React.FC<{ n: number; title: string }> = ({ n, title }) => (
-  <h6 className="mb-3">
-    <span className="text-secondary me-2">Step {n}</span>
-    {title}
-  </h6>
+/* ─── Building blocks ─── */
+
+const Card: React.FC<{ accent: string; children: React.ReactNode; 'data-id'?: string }> = ({
+  accent,
+  children,
+  ...rest
+}) => (
+  <div
+    {...rest}
+    style={{
+      borderRadius: 14, padding: 20,
+      background: 'rgba(255,255,255,0.02)',
+      border: `0.5px solid ${accent}33`
+    }}
+  >
+    {children}
+  </div>
+)
+
+const CardTitle: React.FC<{ step: number; accent: string; children: React.ReactNode }> = ({ step, accent, children }) => (
+  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+    <span style={{
+      fontFamily: mono, fontSize: 10, letterSpacing: 1.4, textTransform: 'uppercase',
+      color: accent, background: `${accent}1a`, border: `0.5px solid ${accent}40`,
+      borderRadius: 5, padding: '3px 7px'
+    }}>
+      Step {step}
+    </span>
+    <span style={{ fontSize: 15, fontWeight: 600, color: c.tx }}>{children}</span>
+  </div>
+)
+
+const Stat: React.FC<{ label: string; value: string; accent: string }> = ({ label, value, accent }) => (
+  <div style={{
+    flex: '1 1 120px', borderRadius: 10, padding: '10px 12px',
+    background: `${accent}0f`, border: `0.5px solid ${accent}2e`
+  }}>
+    <div style={{ fontSize: 18, fontWeight: 600, color: c.tx, fontFamily: mono }}>{value}</div>
+    <div style={{ fontSize: 10, color: c.tm, textTransform: 'uppercase', letterSpacing: 1 }}>{label}</div>
+  </div>
+)
+
+const Tag: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <span style={{
+    display: 'inline-block', fontFamily: mono, fontSize: 10.5, color: c.tm,
+    background: 'rgba(255,255,255,0.03)', border: '0.5px solid rgba(255,255,255,0.06)',
+    borderRadius: 5, padding: '2px 6px', margin: '2px 4px 2px 0'
+  }}>
+    {children}
+  </span>
+)
+
+const Note: React.FC<{ color: string; icon: string; children: React.ReactNode; dataId?: string }> = ({
+  color,
+  icon,
+  children,
+  dataId
+}) => (
+  <div
+    data-id={dataId}
+    style={{
+      display: 'flex', alignItems: 'flex-start', gap: 10,
+      padding: '10px 12px', borderRadius: 9, marginTop: 12,
+      background: `${color}0f`, border: `0.5px solid ${color}2e`,
+      fontSize: 11.5, color: c.tm, lineHeight: 1.5
+    }}
+  >
+    <i className={icon} style={{ color, fontSize: 12, marginTop: 2, flexShrink: 0 }} />
+    <div style={{ minWidth: 0 }}>{children}</div>
+  </div>
+)
+
+const buttonBase: React.CSSProperties = {
+  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+  padding: '10px 18px', borderRadius: 10, fontSize: 13, fontWeight: 600,
+  fontFamily: sans, cursor: 'pointer', transition: 'all 0.2s', textDecoration: 'none'
+}
+
+const PrimaryButton: React.FC<{
+  onClick?: () => void
+  href?: string
+  disabled?: boolean
+  dataId?: string
+  children: React.ReactNode
+}> = ({ onClick, href, disabled, dataId, children }) => {
+  const [h, setH] = useState(false)
+  const style: React.CSSProperties = {
+    ...buttonBase,
+    background: h && !disabled
+      ? 'linear-gradient(135deg, rgba(47,191,177,0.30) 0%, rgba(155,125,255,0.30) 100%)'
+      : 'linear-gradient(135deg, rgba(47,191,177,0.18) 0%, rgba(155,125,255,0.18) 100%)',
+    border: `0.5px solid ${h && !disabled ? 'rgba(47,191,177,0.55)' : 'rgba(47,191,177,0.35)'}`,
+    color: c.tx,
+    opacity: disabled ? 0.5 : 1,
+    cursor: disabled ? 'not-allowed' : 'pointer'
+  }
+  const handlers = {
+    onMouseEnter: () => setH(true),
+    onMouseLeave: () => setH(false)
+  }
+  if (href) {
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" data-id={dataId} style={style} {...handlers}>
+        {children}
+      </a>
+    )
+  }
+  return (
+    <button onClick={onClick} disabled={disabled} data-id={dataId} style={style} {...handlers}>
+      {children}
+    </button>
+  )
+}
+
+const GhostButton: React.FC<{
+  onClick: () => void
+  disabled?: boolean
+  dataId?: string
+  children: React.ReactNode
+}> = ({ onClick, disabled, dataId, children }) => {
+  const [h, setH] = useState(false)
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      data-id={dataId}
+      onMouseEnter={() => setH(true)}
+      onMouseLeave={() => setH(false)}
+      style={{
+        ...buttonBase,
+        padding: '9px 14px', fontSize: 12, fontWeight: 500,
+        background: h && !disabled ? c.s2 : 'transparent',
+        border: `0.5px solid ${h && !disabled ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.06)'}`,
+        color: h && !disabled ? c.tx : c.tm,
+        opacity: disabled ? 0.5 : 1,
+        cursor: disabled ? 'not-allowed' : 'pointer'
+      }}
+    >
+      {children}
+    </button>
+  )
+}
+
+const BackLink: React.FC<{ onClick: () => void; dataId?: string; children: React.ReactNode }> = ({
+  onClick,
+  dataId,
+  children
+}) => (
+  <button
+    onClick={onClick}
+    data-id={dataId}
+    style={{
+      background: 'none', border: 'none', padding: 0, marginTop: 16,
+      color: c.td, fontSize: 11.5, cursor: 'pointer', fontFamily: sans,
+      display: 'inline-flex', alignItems: 'center', gap: 6
+    }}
+  >
+    <i className="fas fa-arrow-left" style={{ fontSize: 10 }} /> {children}
+  </button>
 )
 
 const Progress: React.FC<{ progress: MigrationProgress }> = ({ progress }) => {
   const percent = progress.fraction === null ? null : Math.round(progress.fraction * 100)
   return (
-    <div className="mt-3" data-id="domainMigrationProgress">
-      <div className="d-flex justify-content-between small mb-1">
+    <div style={{ marginTop: 18 }} data-id="domainMigrationProgress">
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, color: c.tm, marginBottom: 6 }}>
         <span>{phaseLabels[progress.phase] || progress.phase}</span>
-        <span className="text-secondary">
-          {progress.filesTotal > 0 ? `${progress.filesDone} / ${progress.filesTotal} files` : `${progress.filesDone} files`}
+        <span style={{ fontFamily: mono, color: c.td }}>
+          {progress.filesTotal > 0 ? `${progress.filesDone}/${progress.filesTotal}` : `${progress.filesDone}`} files
           {percent !== null && ` · ${percent}%`}
         </span>
       </div>
-      <div className="progress" style={{ height: '6px' }}>
-        <div
-          className={`progress-bar${percent === null ? ' progress-bar-striped progress-bar-animated' : ''}`}
-          role="progressbar"
-          aria-valuenow={percent ?? undefined}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          style={{ width: percent === null ? '100%' : `${percent}%` }}
-        />
+      <div style={{ height: 5, borderRadius: 3, background: 'rgba(255,255,255,0.06)', overflow: 'hidden' }}>
+        <div style={{
+          height: '100%', borderRadius: 3,
+          width: percent === null ? '100%' : `${percent}%`,
+          background: `linear-gradient(90deg, ${c.cy}, ${c.pu})`,
+          transition: 'width 0.2s ease',
+          animation: percent === null ? 'dmwPulse 1.2s ease-in-out infinite' : undefined
+        }} />
       </div>
-      {progress.currentPath && <div className="small text-secondary text-truncate mt-1">{progress.currentPath}</div>}
+      {progress.currentPath && (
+        <div style={{
+          fontSize: 10.5, color: c.td, marginTop: 6, fontFamily: mono,
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+        }}>
+          {progress.currentPath}
+        </div>
+      )}
     </div>
   )
 }
