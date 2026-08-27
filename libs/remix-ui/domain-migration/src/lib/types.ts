@@ -35,6 +35,8 @@ export interface MigrationManifest {
   config: Record<string, string>
   /** Top level workspace names found under `.workspaces/`. */
   workspaces: string[]
+  /** Cloud workspaces left out of the archive; they resync from S3. */
+  cloudWorkspaces?: string[]
 }
 
 export type MigrationPhase =

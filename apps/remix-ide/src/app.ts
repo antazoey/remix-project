@@ -923,6 +923,17 @@ class AppComponent {
         }
       }
 
+      // Handoff link from the old domain: land the user straight on the import step.
+      if (this.params.migrate) {
+        try {
+          this.track({ category: 'App', action: 'queryParams-migrate', name: this.params.migrate, isClick: false })
+          await this.appManager.activatePlugin(['domainMigration'])
+          await this.appManager.call('domainMigration', 'showMigration', this.params.migrate)
+        } catch (e) {
+          console.error(e)
+        }
+      }
+
       if (this.params.calls) {
         const calls = this.params.calls.split('///')
         for (const call of calls) {

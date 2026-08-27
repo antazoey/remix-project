@@ -1,5 +1,6 @@
 import { ViewPlugin } from '@remixproject/engine-web'
 import React from 'react'
+import { createPortal } from 'react-dom'
 import { PluginViewWrapper, DISCORD_URL, REMIX_DOCS_URL } from '@remix-ui/helper'
 import { useAuth } from '@remix-ui/app'
 import { MigrationConfig, parseMigrationConfig, snoozeMigrationPrompt } from '@remix-ui/domain-migration'
@@ -702,7 +703,7 @@ const HelpModalOverlay: React.FC<{
     }
   }
 
-  return (
+  return createPortal(
     <div
       className="help-modal-backdrop"
       data-id="help-modal-backdrop"
@@ -715,6 +716,9 @@ const HelpModalOverlay: React.FC<{
       >
         {renderContent()}
       </div>
-    </div>
+    </div>,
+    // Side-panel plugin views stay mounted but hidden with `d-none`, and a
+    // fixed-position modal inside a display:none ancestor renders invisibly.
+    document.body
   )
 }

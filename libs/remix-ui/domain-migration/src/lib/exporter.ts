@@ -86,7 +86,8 @@ export async function exportArchive(target: SaveTarget, onProgress: ProgressCall
     totalBytes: scan.totalBytes,
     entries: scan.entries,
     config: collectConfig(),
-    workspaces: scan.workspaces
+    workspaces: scan.workspaces,
+    cloudWorkspaces: scan.cloudWorkspaces
   }
 
   zip.file(MANIFEST_ENTRY, JSON.stringify(manifest))

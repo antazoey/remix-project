@@ -1,7 +1,13 @@
 import { MigrationEntry, MigrationFs, MigrationIssue } from './types'
 
 /** Directories that are never part of a migration. */
-const SKIP_ENTRIES = new Set(['_workspace.zip', '.sync-manifest.json'])
+const SKIP_ENTRIES = new Set([
+  '_workspace.zip',
+  '.sync-manifest.json',
+  // Cloud workspaces live on S3 and come back by signing in on the new
+  // domain, so copying them into the archive would only bloat it.
+  '.cloud-workspaces'
+])
 
 export function getFs(): MigrationFs {
   const fs = (window as any).remixFileSystem
@@ -72,7 +78,69 @@ export interface ScanResult {
   entries: MigrationEntry[]
   totalBytes: number
   workspaces: string[]
+  /** Cloud workspaces deliberately left out, for reporting in the UI. */
+  cloudWorkspaces: string[]
   issues: MigrationIssue[]
+}
+
+export interface MigrationPreview {
+  fileCount: number
+  totalBytes: number
+  workspaces: string[]
+  cloudWorkspaces: string[]
+}
+
+/**
+ * Size up the export without reading file contents, so the wizard can show
+ * what's included before the user commits to a full hash-and-pack pass.
+ */
+export async function previewFileSystem(fs: MigrationFs): Promise<MigrationPreview> {
+  let fileCount = 0
+  let totalBytes = 0
+
+  const walk = async (dir: string): Promise<void> => {
+    let names: string[]
+    try {
+      names = await fs.readdir(dir)
+    } catch {
+      return
+    }
+    for (const name of names) {
+      if (SKIP_ENTRIES.has(name)) continue
+      const path = dir === '/' ? `/${name}` : `${dir}/${name}`
+      try {
+        const stat = await fs.stat(path)
+        if (stat.isDirectory()) await walk(path)
+        else {
+          fileCount++
+          totalBytes += stat.size || 0
+        }
+      } catch {
+        // unreadable entries surface during the real scan
+      }
+    }
+  }
+  await walk('/')
+
+  const listDirs = async (root: string): Promise<string[]> => {
+    const out: string[] = []
+    try {
+      if (!(await fs.exists(root))) return out
+      for (const name of await fs.readdir(root)) {
+        if ((await fs.stat(`${root}/${name}`)).isDirectory()) out.push(name)
+      }
+    } catch {
+      // listing is cosmetic
+    }
+    return out
+  }
+
+  return {
+    fileCount,
+    totalBytes,
+    workspaces: await listDirs('/.workspaces'),
+    cloudWorkspaces: await listDirs('/.cloud-workspaces')
+  }
 }
 
 /**
@@ -80,14 +148,14 @@ export interface ScanResult {
  *
  * Files are always read as raw bytes. Reading as utf8 here is what silently
  * corrupted git pack files in the previous backup implementation.
- */
-export async function scanFileSystem(
+ */export async function scanFileSystem(
   fs: MigrationFs,
   onFile?: (path: string, bytes: Uint8Array, index: number) => Promise<void> | void
 ): Promise<ScanResult> {
   const entries: MigrationEntry[] = []
   const issues: MigrationIssue[] = []
   const workspaces: string[] = []
+  const cloudWorkspaces: string[] = []
   let totalBytes = 0
 
   const walk = async (dir: string): Promise<void> => {
@@ -131,5 +199,15 @@ export async function scanFileSystem(
     // workspace listing is cosmetic; the entry list is the source of truth
   }
 
-  return { entries, totalBytes, workspaces, issues }
+  try {
+    if (await fs.exists('/.cloud-workspaces')) {
+      for (const name of await fs.readdir('/.cloud-workspaces')) {
+        if ((await fs.stat(`/.cloud-workspaces/${name}`)).isDirectory()) cloudWorkspaces.push(name)
+      }
+    }
+  } catch {
+    // nothing to report if the directory can't be read
+  }
+
+  return { entries, totalBytes, workspaces, cloudWorkspaces, issues }
 }
