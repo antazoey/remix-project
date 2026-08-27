@@ -10,8 +10,7 @@ import { remixAILogger,
   getModelById,
   findModel,
   ANONYMOUS_FALLBACK_MODELS,
-  setModelCatalog,
-  isAutoModelId
+  setModelCatalog
 } from '@remix/remix-ai-core'
 import type { AIModel } from '@remix/remix-ai-core'
 import type { IRemixAIPlugin } from './types'
@@ -33,30 +32,20 @@ export class ModelManager {
   async setModel(modelId: string, allowedModels: string[] = [], provider?: string): Promise<void> {
     const plugin = this.deps.plugin
     let model: AIModel | undefined
-    let dynamic: AIModel[] = []
     try {
-      const fetched: AIModel[] = await plugin.call('assistantState', 'getAvailableModels')
-      if (Array.isArray(fetched)) {
-        dynamic = fetched
+      const dynamic: AIModel[] = await plugin.call('assistantState', 'getAvailableModels')
+      if (Array.isArray(dynamic)) {
+        remixAILogger.log(`[ModelManager] catalogue: ${dynamic.length} models`)
         // Mirror the catalogue so ModelFactory can read each model's token
         // budget / temperature instead of falling back to provider defaults.
         setModelCatalog(dynamic)
         model = findModel(dynamic, modelId, provider)
+        remixAILogger.log(`[ModelManager] resolved "${modelId}" →`, model)
       }
     } catch (e) {
       remixAILogger.warn('[ModelManager] assistantState.getAvailableModels failed', e)
     }
 
-    if (isAutoModelId(modelId)) {
-      const concrete = await this.resolveConcreteModel(dynamic, provider)
-      if (!concrete) {
-        throw new Error(`[ModelManager.setModel] "${modelId}" is a router pseudo-model and no concrete model is available to stand in for it.`)
-      }
-      remixAILogger.log(`[ModelManager] "${modelId}" is a router pseudo-model — committing ${concrete.provider}/${concrete.id} instead`)
-      modelId = concrete.id
-      provider = concrete.provider
-      model = concrete
-    }
     if (!model) model = findModel(ANONYMOUS_FALLBACK_MODELS, modelId, provider) ?? getModelById(modelId)
     if (!model) {
       // No silent fallback. The picker is fed by /permissions — if a
@@ -129,19 +118,6 @@ export class ModelManager {
     ;(plugin as any).publishRouteStatus?.()
   }
 
-  private async resolveConcreteModel(catalogue: AIModel[], provider?: string): Promise<AIModel | undefined> {
-    const plugin = this.deps.plugin
-    try {
-      const def: AIModel | null = await plugin.call('assistantState' as any, 'getDefaultModel')
-      if (def && def.id && def.available !== false && !isAutoModelId(def.id)) return def
-    } catch (e) {
-      remixAILogger.warn('[ModelManager] assistantState.getDefaultModel failed while resolving a router pseudo-model', e)
-    }
-    const usable = (Array.isArray(catalogue) ? catalogue : [])
-      .filter((m) => m.available && !isAutoModelId(m.id))
-    return (provider ? usable.find((m) => m.provider === provider) : undefined) ?? usable[0]
-  }
-
   private async handleOllamaProvider(_model: AIModel, _modelId: string): Promise<void> {
     const plugin = this.deps.plugin
     const isAvailable = await isOllamaAvailable()
@@ -203,9 +179,7 @@ export class ModelManager {
     } catch (e) {
       throw new Error(`[ModelManager.setAssistantProvider] Cannot resolve provider "${provider}" — assistantState.getAvailableModels failed: ${(e as Error)?.message ?? e}`)
     }
-    // `!isAutoModelId` — the Auto row is advertised under the openrouter
-    // provider but is not servable; picking it here would 403 every request.
-    const candidates = (Array.isArray(catalogue) ? catalogue : []).filter(m => m.provider === provider && m.available && !isAutoModelId(m.id))
+    const candidates = (Array.isArray(catalogue) ? catalogue : []).filter(m => m.provider === provider && m.available)
     if (candidates.length === 0) {
       throw new Error(`[ModelManager.setAssistantProvider] No available model for provider "${provider}" in /permissions ai_models. Backend must advertise at least one row for this provider.`)
     }

@@ -173,35 +173,6 @@ export class DeepAgentManager {
     return this.deps.plugin.deepAgentEnabled
   }
 
-  async setAutoMode(enabled: boolean): Promise<void> {
-    // const plugin = this.deps.plugin
-    // remixAILogger.log(`[RemixAI Plugin] ${enabled ? 'Enabling' : 'Disabling'} auto mode for DeepAgent`)
-
-    // if (plugin.deepAgentInferencer) {
-    //   plugin.deepAgentInferencer.setAutoMode(enabled)
-    //   remixAILogger.log(`[RemixAI Plugin] Auto mode ${enabled ? 'enabled' : 'disabled'} for existing DeepAgent instance`)
-    // } else {
-    //   remixAILogger.warn('[RemixAI Plugin] DeepAgent not initialized, auto mode setting will apply when initialized')
-    // }
-
-    // // Store the auto mode preference
-    // localStorage.setItem('deepagent_auto_mode', enabled ? 'true' : 'false')
-    remixAILogger.log('[RemixAI Plugin] Auto mode is disabled')
-
-  }
-
-  getAutoModeStatus(): boolean {
-    // const plugin = this.deps.plugin
-
-    // if (plugin.deepAgentInferencer) {
-    //   return plugin.deepAgentInferencer.isAutoModeEnabled()
-    // }
-
-    // // Return stored preference if DeepAgent not initialized
-    // return localStorage.getItem('deepagent_auto_mode') === 'true'
-    return false
-  }
-
   /**
    * Set DeepAgent thread for an existing conversation.
    * Uses conversationId as part of thread_id so MemorySaver restores that conversation's context.

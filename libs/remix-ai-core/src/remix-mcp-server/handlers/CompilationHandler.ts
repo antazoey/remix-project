@@ -295,7 +295,7 @@ export class GetCompilationResultByFilePathHandler extends BaseToolHandler {
     properties: {
       filePath: {
         type: 'string',
-        description: ''
+        description: 'Workspace-relative path of the compiled file.'
       }
     },
     required: ['filePath']

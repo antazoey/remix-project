@@ -24,7 +24,6 @@ import { aiErrorFromException } from '../../state/ai-error'
 import { HumanMessage, AIMessage, SystemMessage, BaseMessage } from '@langchain/core/messages'
 import type { DynamicStructuredTool } from '@langchain/core/tools'
 import { BaseChatModel } from '@langchain/core/language_models/chat_models'
-import { selectOptimalModel } from './helpers/modelSelection'
 import { IndexedDBCheckpointSaver } from '../../storage/IndexedDBCheckpointSaver'
 import type { DeepAgent } from 'deepagents'
 import { RemixDeepAgentMiddleware } from './deepAgentMiddleWare'
@@ -201,10 +200,6 @@ export class DeepAgentInferencer implements ICompletions, IGeneration {
       timeout: config?.timeout || 300000, // 5 minutes
       enableSubagents: config?.enableSubagents !== false,
       enablePlanning: config?.enablePlanning !== false,
-      // Auto Mode: caller decides on/off based on assistantState.isAutoModeEnabled().
-      // No fallbackModel field \u2014 selectOptimalModel uses the current selection
-      // and the structural Sonnet-substitution safety net in answer().
-      autoMode: config?.autoMode || { enabled: false }
     }
 
     // Store user API keys for model creation
@@ -430,38 +425,7 @@ export class DeepAgentInferencer implements ICompletions, IGeneration {
         )
       }
 
-      // Resolve the live, backend-driven list of model ids the user is
-      // allowed to use. Source of truth is the assistantState plugin's
-      // `getAvailableModels()` (which reads `permissions.ai_models`).
-      // The legacy `plugin.getAllowedModels()` reads `this.modelAccess`,
-      // which nothing in the codebase ever populates — querying it returns
-      // [] and makes us misclassify users as "no Anthropic permitted".
-      const resolveAllowedIds = async (): Promise<string[]> => {
-        try {
-          const models = await (this.plugin as any).call?.('assistantState', 'getAvailableModels')
-          if (Array.isArray(models)) {
-            return models.filter((m: any) => m?.available).map((m: any) => m.id)
-          }
-        } catch { /* assistantState not active — fall through */ }
-        // Last-resort legacy path. Almost certainly returns [].
-        return (this.plugin as any).getAllowedModels?.() || []
-      }
-
-      if (this.config.autoMode?.enabled) {
-        const allowed = await resolveAllowedIds()
-        remixAILogger.log('[DeepAgent.answer] autoMode=ENABLED', {
-          currentModelSelection: this.modelSelection,
-          allowedModels: allowed,
-          allowedCount: allowed.length,
-          allowedHasSonnet: allowed.some((m: string) => m.includes('sonnet'))
-        })
-        const optimalModel = selectOptimalModel(prompt, context, this.config.autoMode, this.modelSelection, allowed)
-        remixAILogger.log('[DeepAgent.answer] selectOptimalModel →', optimalModel)
-        await this.updateAgentModel(optimalModel)
-        remixAILogger.log('[DeepAgent.answer] after updateAgentModel, this.modelSelection=', this.modelSelection)
-      } else {
-        remixAILogger.log('[DeepAgent.answer] autoMode=DISABLED, using static model:', this.modelSelection)
-      }
+      remixAILogger.log('[DeepAgent.answer] model:', this.modelSelection)
 
       const seeded = this.pendingHistoryMessages || []
       this.pendingHistoryMessages = null
@@ -1083,25 +1047,6 @@ export class DeepAgentInferencer implements ICompletions, IGeneration {
     }
   }
 
-  private async updateAgentModel(selectedModel: ModelSelection): Promise<void> {
-    // Only recreate if the model has changed
-    if (this.modelSelection.provider === selectedModel.provider &&
-        this.modelSelection.modelId === selectedModel.modelId) {
-      return
-    }
-
-    remixAILogger.log(`[DeepAgentInferencer] Switching from ${this.modelSelection.provider}:${this.modelSelection.modelId} to ${selectedModel.provider}:${selectedModel.modelId}`)
-
-    // Update current model selection
-    this.modelSelection = selectedModel
-
-    // Create new model instance
-    this.model = await createModelInstance(selectedModel, DAPP_MAX_TOKENS, this.userApiKeys)
-
-    // do not swap the model, recreate the agent with the new model and existing tools
-    await this.createAgentWithTools(this.tools)
-  }
-
   private async handleError(error: any, method: string, prompt: string, params: IParams): Promise<string> {
     remixAILogger.error(`[DeepAgentInferencer] Error in ${method}:`, error)
 
@@ -1224,21 +1169,7 @@ export class DeepAgentInferencer implements ICompletions, IGeneration {
     return this.agent !== null
   }
 
-  setAutoMode(enabled: boolean): void {
-    if (this.config.autoMode) {
-      this.config.autoMode.enabled = enabled
-      remixAILogger.log(`[DeepAgentInferencer] Auto mode ${enabled ? 'enabled' : 'disabled'}`)
-    }
-  }
-
-  isAutoModeEnabled(): boolean {
-    return this.config.autoMode?.enabled || false
-  }
-
-  getCurrentModelInfo(): ModelSelection & { autoModeEnabled: boolean } {
-    return {
-      ...this.modelSelection,
-      autoModeEnabled: this.isAutoModeEnabled()
-    }
+  getCurrentModelInfo(): ModelSelection {
+    return { ...this.modelSelection }
   }
 }

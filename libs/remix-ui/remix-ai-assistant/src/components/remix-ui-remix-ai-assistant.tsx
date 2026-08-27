@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useRef, useImperativeHandle, M
 //@ts-ignore
 import '../css/remix-ai-assistant.css'
 
-import { ChatCommandParser, GenerationParams, ChatHistory, HandleStreamResponse, AIModel, ANONYMOUS_FALLBACK_MODELS, remixAILogger, modelKey, parseModelKey, findModel, applyByokKeyPolicy, BYOK_API_KEY_SETTINGS, modelTransportProvider, onApiKeysChange, isAutoModelId, type ModelTransport } from '@remix/remix-ai-core'
+import { ChatCommandParser, GenerationParams, ChatHistory, HandleStreamResponse, AIModel, ANONYMOUS_FALLBACK_MODELS, remixAILogger, modelKey, parseModelKey, findModel, applyByokKeyPolicy, BYOK_API_KEY_SETTINGS, modelTransportProvider, onApiKeysChange, type ModelTransport } from '@remix/remix-ai-core'
 import { ToolApprovalRequest, ApiKeyErrorEvent } from '@remix/remix-ai-core'
 import { HandleOpenAICompatibleResponse, HandleOllamaResponse } from '@remix/remix-ai-core'
 //@ts-ignore
@@ -176,14 +176,6 @@ export const RemixUiRemixAiAssistant = React.forwardRef<
   // features here. Anonymous users see ANONYMOUS_FALLBACK_MODELS until
   // assistantState reports otherwise.
   const [availableModels, setAvailableModels] = useState<AIModel[]>(ANONYMOUS_FALLBACK_MODELS)
-  // ai:auto feature flag — gates the Auto Mode option in the model picker.
-  // Sourced from assistantState.hasFeature('ai:auto') and refreshed on
-  // every stateChanged event. Anonymous users get false.
-  const [autoModeAvailable, setAutoModeAvailable] = useState(false)
-  // Tracks whether we've applied the "auto is the default for logged-in
-  // users" rule in the current session. Reset when ai:auto flips back to
-  // false (logout) so the next login re-applies the default.
-  const autoDefaultAppliedRef = useRef(false)
   const [modelOpt, setModelOpt] = useState<{ top?: number, bottom?: number, left: number, maxHeight: number }>({ top: 0, left: 0, maxHeight: 0 })
   const [ollamaModelOpt, setOllamaModelOpt] = useState({ top: 0, left: 0 })
   const menuRef = useRef<any>()
@@ -196,7 +188,6 @@ export const RemixUiRemixAiAssistant = React.forwardRef<
   // Mirror of the stored BYOK keys, so the picker can mark which rows run on
   // the user's key and which are waiting for one.
   const [byokKeyPresence, setByokKeyPresence] = useState<Record<string, boolean>>({})
-  const [autoModeEnabled, setAutoModeEnabled] = useState(false)
   const [usingOwnApiKey, setUsingOwnApiKey] = useState(false)
   const [apiKeyError, setApiKeyError] = useState<ApiKeyErrorEvent | null>(null)
   const [themeTracker, setThemeTracker] = useState<{ name: string } | null>(() => ({ name: getSystemThemeFallback() }))
@@ -1076,8 +1067,6 @@ export const RemixUiRemixAiAssistant = React.forwardRef<
     }
     const refreshFeatures = async () => {
       try {
-        // const auto = await props.plugin.call('assistantState' as any, 'hasFeature', 'ai:auto')
-        setAutoModeAvailable(false)
         // const mcp = await props.plugin.call('assistantState' as any, 'hasFeature', 'mcp:basicExternal')
         setMcpEnabled(true)
         // When the section gets hidden, also collapse the inner toggle so
@@ -1224,26 +1213,6 @@ export const RemixUiRemixAiAssistant = React.forwardRef<
   useEffect(() => {
     props.onMessagesChange?.(messages)
   }, [messages, props.onMessagesChange])
-
-  // Auto Mode is the default for every logged-in user. Once `ai:auto`
-  // becomes available (after /permissions resolves), enable it. When it
-  // flips back off (logout), reset both the toggle and the
-  // "already-applied" guard so the next login re-applies the default.
-  useEffect(() => {
-    if (autoModeAvailable) {
-      if (!autoDefaultAppliedRef.current) {
-        autoDefaultAppliedRef.current = true
-        setAutoModeEnabled(true)
-        void props.plugin.call('remixAI', 'setAutoMode', true).catch(() => { /* noop */ })
-      }
-    } else {
-      autoDefaultAppliedRef.current = false
-      if (autoModeEnabled) {
-        setAutoModeEnabled(false)
-        void props.plugin.call('remixAI', 'setAutoMode', false).catch(() => { /* noop */ })
-      }
-    }
-  }, [autoModeAvailable])
 
   // Smart auto-scroll: only scroll to bottom if:
   useEffect(() => {
@@ -2191,55 +2160,6 @@ export const RemixUiRemixAiAssistant = React.forwardRef<
   const handleModelSelection = useCallback(async (selectionKey: string) => {
     setChatNotice(null)
     const { id: modelId, provider: selectedProvider } = parseModelKey(selectionKey)
-    // Handle auto mode selection.
-    //
-    // When the backend advertises an Auto row in `ai_models` its key is
-    // `openrouter::openrouter/auto`, not the literal 'auto' — so matching only
-    // 'auto' sent the user down the static-model path and set
-    // `openrouter/auto` as the active model. That is a router pseudo-model the
-    // proxy will not serve, and every request then failed with
-    // `403 Model 'openrouter/auto' is not available`.
-    if (selectionKey === 'auto' || isAutoModelId(modelId)) {
-      setAutoModeEnabled(true)
-      try {
-        await props.plugin.call('remixAI', 'setAutoMode', true)
-        trackMatomoEvent({ category: 'ai', action: 'remixAI', name: 'auto_mode_enabled', isClick: true })
-      } catch (error) {
-        remixAILogger.warn('Failed to enable auto mode:', error)
-      }
-      // When the user toggles back to Auto after explicitly picking a
-      // model (e.g. Opus → Auto), reset the underlying selection to the
-      // backend-advertised default. Otherwise the inferencer keeps the
-      // last static pick and `selectOptimalModel` (which only swaps in
-      // *Sonnet* when allowed) silently keeps Opus, defeating Auto Mode.
-      try {
-        const def: AIModel | null = await props.plugin.call('assistantState' as any, 'getDefaultModel')
-        if (def && def.id && def.available !== false) {
-          setSelectedModelId(def.id)
-          setSelectedModel(def)
-          setAssistantChoice(def.provider)
-          try {
-            await props.plugin.call('remixAI', 'setModel', def.id, def.provider)
-          } catch (e) {
-            remixAILogger.warn('[remix-ai-assistant] setModel(default) failed when entering Auto Mode', e)
-          }
-        } else {
-          remixAILogger.warn('[remix-ai-assistant] Auto Mode requested but /permissions has no usable default model yet', def)
-        }
-      } catch (e) {
-        remixAILogger.warn('[remix-ai-assistant] assistantState.getDefaultModel failed when entering Auto Mode', e)
-      }
-      setShowModelSelector(false)
-      return
-    } else {
-      setAutoModeEnabled(false)
-      try {
-        await props.plugin.call('remixAI', 'setAutoMode', false)
-      } catch (error) {
-        remixAILogger.warn('Failed to disable auto mode:', error)
-      }
-    }
-
     const model = findModel(availableModels, modelId, selectedProvider)
     if (!model) return
 
@@ -2936,8 +2856,6 @@ export const RemixUiRemixAiAssistant = React.forwardRef<
               setMcpEnhanced={setMcpEnhanced}
               availableModels={availableModels}
               selectedModel={selectedModel}
-              autoModeEnabled={autoModeEnabled}
-              autoModeAvailable={autoModeAvailable}
               handleModelSelection={handleModelSelection}
               onLockedModelClick={handleLockedModelClick}
               upgradePillState={pillStates.upgrade}
@@ -2996,8 +2914,6 @@ export const RemixUiRemixAiAssistant = React.forwardRef<
               setMcpEnhanced={setMcpEnhanced}
               availableModels={availableModels}
               selectedModel={selectedModel}
-              autoModeEnabled={autoModeEnabled}
-              autoModeAvailable={autoModeAvailable}
               handleModelSelection={handleModelSelection}
               onLockedModelClick={handleLockedModelClick}
               upgradePillState={pillStates.upgrade}

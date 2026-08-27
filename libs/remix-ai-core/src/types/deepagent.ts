@@ -45,19 +45,6 @@ export function isUsingOwnKeyForProvider(
 }
 
 /**
- * Auto model selection configuration
- */
-export interface IAutoModelConfig {
-  enabled: boolean
-  fallbackModel?: {
-    provider: ModelProvider
-    modelId: string
-  }
-  securityKeywords?: string[]
-  complexityThreshold?: number
-}
-
-/**
  * DeepAgent configuration interface
  */
 export interface IDeepAgentConfig {
@@ -69,7 +56,6 @@ export interface IDeepAgentConfig {
   timeout: number
   enableSubagents: boolean
   enablePlanning: boolean
-  autoMode?: IAutoModelConfig
 }
 
 /**
