@@ -53,11 +53,8 @@ const providerIcon = (provider: string): React.ReactNode => {
   }
 }
 
-/** The anonymous sign-in placeholder is rendered ungrouped (like Auto Mode). */
 const isSignInModel = (model: AIModel) => model.id === '__signin__'
 
-/** Shared with the assistant's selection handler, which must route these rows
- *  to Auto Mode rather than setting them as the active model. */
 const isAutoModel = (model: AIModel) => isAutoModelId(model.id)
 
 /** Map an AIModel to the row shape consumed by GroupListMenu. */
@@ -138,8 +135,6 @@ interface ProviderGroup {
 
 export interface ModelSelectorMenuProps {
   availableModels: AIModel[]
-  autoModeAvailable: boolean
-  autoModeEnabled: boolean
   /** `'auto'` or `modelKey(selectedModel)` — the currently active choice. */
   currentChoice: string
   setChoice: Dispatch<React.SetStateAction<any>>
@@ -234,10 +229,12 @@ export default function ModelSelectorMenu(props: ModelSelectorMenuProps) {
 
   const keyPresence = props.byokKeyPresence ?? {}
 
+  // The Auto row is the `openrouter/auto` model, hoisted to the top of the
   const autoValue = autoModel ? modelKey(autoModel) : 'auto'
-  const showAutoRow = !!autoModel || props.autoModeAvailable
-  const autoSelected = props.currentChoice === autoValue || props.autoModeEnabled
-  const autoDescription = autoModel?.description || 'Automatically select the best model based on your prompt'
+  const showAutoRow = !!autoModel
+  const autoSelected = props.currentChoice === autoValue
+  const autoTitle = autoModel?.displayName || 'Auto'
+  const autoDescription = autoModel?.description || ''
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
@@ -299,7 +296,7 @@ export default function ModelSelectorMenu(props: ModelSelectorMenuProps) {
               </span>
               <span className="d-flex flex-column">
                 <span className="d-flex align-items-center">
-                  <span className="fw-bold small rai-auto-title">Auto Mode</span>
+                  <span className="fw-bold small rai-auto-title">{autoTitle}</span>
                   <span className="badge ms-2 rai-auto-badge">Recommended</span>
                 </span>
                 <span className="text-wrap rai-auto-subtitle" style={{ fontSize: '0.7rem' }}>

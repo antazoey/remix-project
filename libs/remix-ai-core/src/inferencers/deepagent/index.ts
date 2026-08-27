@@ -85,11 +85,6 @@ export {
   type PromptComplexity
 } from './helpers/promptAnalysis'
 
-// Model selection
-export {
-  selectOptimalModel
-} from './helpers/modelSelection'
-
 export { createModelInstance } from './ModelFactory'
 
 export { buildSubagentConfigs, type SubagentConfigItem } from './SubagentConfig'

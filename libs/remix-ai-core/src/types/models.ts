@@ -1,6 +1,7 @@
 import { IParams } from './types';
 import { Features } from '@remix-api';
 import { ModelProvider, ModelTransport } from './deepagent';
+import { remixAILogger } from '../helpers/logger';
 
 /**
  * Model registry entry.
@@ -195,9 +196,15 @@ function generalPurposeSubagent(value: any): AIModel['generalPurposeSubagent'] {
 
 export function parseAIModelsFromPermissions(permissions: any): AIModel[] | null {
   const raw = permissions?.ai_models
+  console.log('parseAIModelsFromPermissions', { raw, permissions })
   if (!Array.isArray(raw)) return null
-  const parsed: AIModel[] = raw
-    .filter((m: any) => m && typeof m.id === 'string' && typeof m.provider === 'string')
+  const usable = raw.filter((m: any) => m && typeof m.id === 'string' && m.id.trim() !== '')
+  if (usable.length !== raw.length) {
+    remixAILogger.warn(
+      `[parseAIModelsFromPermissions] ${raw.length - usable.length} of ${raw.length} ai_models rows have no usable id and were skipped`
+    )
+  }
+  const parsed: AIModel[] = usable
     .map((m: any): AIModel => ({
       id: m.id,
       ...normalizeTransport(m.provider, m.route_provider ?? m.routeProvider),

@@ -28,7 +28,6 @@ const profile = {
     'enableDeepAgent', 'disableDeepAgent', 'isDeepAgentEnabled',
     'setDeepAgentThread',
     'respondToToolApproval',
-    'setAutoMode', 'getAutoModeStatus',
     'clearCaches', 'cancelRequest',
     'getAllowedModels', 'setModelAccess',
     'isUsingOwnApiKey', 'getApiKeyStatus', 'fallbackToProxy',
@@ -1162,14 +1161,6 @@ export class RemixAIPlugin extends Plugin {
 
   isDeepAgentEnabled(): boolean {
     return this.deepAgentManager.isEnabled()
-  }
-
-  async setAutoMode(enabled: boolean): Promise<void> {
-    return this.deepAgentManager.setAutoMode(enabled)
-  }
-
-  getAutoModeStatus(): boolean {
-    return this.deepAgentManager.getAutoModeStatus()
   }
 
   setDeepAgentThread(conversationId: string): void {

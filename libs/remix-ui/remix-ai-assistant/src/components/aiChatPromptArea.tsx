@@ -24,8 +24,6 @@ interface AiChatPromptAreaProps {
     setMcpEnhanced: React.Dispatch<React.SetStateAction<boolean>>
     availableModels: AIModel[]
     selectedModel: any
-    autoModeEnabled: boolean
-    autoModeAvailable: boolean
     handleModelSelection: (modelName: string) => void
     onLockedModelClick?: (modelId: string, modelName: string) => void
     /** Permission-derived state of the per-model "Upgrade plan" pill. */
@@ -96,9 +94,7 @@ export default function AiChatPromptArea(props: AiChatPromptAreaProps) {
           <div className="text-uppercase ms-2 mb-2 small rai-selector-heading flex-shrink-0">Select a model</div>
           <ModelSelectorMenu
             availableModels={props.availableModels}
-            autoModeAvailable={props.autoModeAvailable}
-            autoModeEnabled={props.autoModeEnabled}
-            currentChoice={props.autoModeEnabled ? 'auto' : (props.selectedModel ? modelKey(props.selectedModel) : props.selectedModelId as string)}
+            currentChoice={props.selectedModel ? modelKey(props.selectedModel) : props.selectedModelId as string}
             setChoice={props.handleModelSelection}
             setShowOptions={props.setShowModelSelector}
             onLockedItemClick={handleLockedItemClick}
@@ -179,7 +175,6 @@ export default function AiChatPromptArea(props: AiChatPromptAreaProps) {
         ollamaModels={props.ollamaModels}
         selectedOllamaModel={props.selectedOllamaModel}
         modelSelectorBtnRef={props.modelSelectorBtnRef}
-        autoModeEnabled={props.autoModeEnabled}
         stopRequest={props.stopRequest}
         handleLoadSkills={props.handleLoadSkills}
         usingOwnApiKey={props.usingOwnApiKey}
