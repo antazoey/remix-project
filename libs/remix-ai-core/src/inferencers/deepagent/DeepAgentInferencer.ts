@@ -29,8 +29,8 @@ import type { DeepAgent } from 'deepagents'
 import { RemixDeepAgentMiddleware } from './deepAgentMiddleWare'
 
 import './AsyncLocalStorageInit'
-import { createModelInstance, modelInstanceSupportsTools } from './ModelFactory'
-import { resolveCodeCapableSelection, syncModelCatalog } from './helpers/modelCatalog'
+import { createModelInstance } from './ModelFactory'
+import { syncModelCatalog } from './helpers/modelCatalog'
 import { generateStructured } from '../../helpers/structuredOutput'
 import { SecurityCheckSchema } from '../../types/schemas'
 import { getLangfuseCallbackHandler, flushLangfuse } from '../../helpers/langfuse'
@@ -983,35 +983,22 @@ export class DeepAgentInferencer implements ICompletions, IGeneration {
       }
 
       if (this.config.enableSubagents && this.model) {
-        let fallbackModel = this.model
-        let subagentSelection = this.modelSelection
-        const codeCapable = await resolveCodeCapableSelection(this.plugin, this.modelSelection)
-        if (codeCapable) {
-          const candidate = await createModelInstance(codeCapable, DAPP_MAX_TOKENS, this.userApiKeys)
-          // Subagents bind tools on every request. A code-capable model that
-          if (modelInstanceSupportsTools(candidate)) {
-            fallbackModel = candidate
-            subagentSelection = codeCapable
-            remixAILogger.log(`[DeepAgentInferencer] Subagents use ${codeCapable.modelId} (route=${codeCapable.routeProvider ?? codeCapable.provider}); ${this.modelSelection.modelId} is not advertised as code-capable`)
-          } else {
-            remixAILogger.warn(`[DeepAgentInferencer] ${codeCapable.modelId} cannot call tools — subagents stay on ${this.modelSelection.modelId}`)
-          }
-        }
-        // A subagent that cannot be built must not take the whole agent with
-        const subagentProfile = resolveHarnessProfile(subagentSelection)
-        const shapedTools = applyHarnessToolRules(this.tools, subagentProfile)
+        // Subagents run on the user's selected model — the same instance the
+        // main agent uses. No separate code-capable pick: a second model meant
+        // subagents could answer from a model the user never chose.
+        const shapedTools = applyHarnessToolRules(this.tools, harnessProfile)
         if (shapedTools.length !== this.tools.length) {
           remixAILogger.log(
-            `[DeepAgentInferencer] harness profile for ${subagentSelection.modelId} hides ` +
+            `[DeepAgentInferencer] harness profile for ${this.modelSelection.modelId} hides ` +
             `${this.tools.length - shapedTools.length} tool(s) from subagents`
           )
         }
+        // A subagent that cannot be built must not take the whole agent with it.
         try {
           agentConfig.subagents = await buildSubagentConfigs(
             shapedTools,
             this.model,
-            this.filesystemBackend,
-            fallbackModel
+            this.filesystemBackend
           )
         } catch (subagentError) {
           remixAILogger.error(

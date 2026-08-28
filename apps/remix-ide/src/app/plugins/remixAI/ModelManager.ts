@@ -95,10 +95,11 @@ export class ModelManager {
     // Update inference parameters
     GenerationParams.provider = model.provider
     GenerationParams.model = modelId
-    CompletionParams.provider = model.provider
-    CompletionParams.model = modelId
     AssistantParams.provider = model.provider
     AssistantParams.model = modelId
+    // CompletionParams deliberately gets neither: inline completion targets
+    // the `/ai/completion` proxy, which pins its own FIM model server-side.
+    // Stamping the chat selection here routed completions at a chat model.
 
     // Clear thread IDs when switching models
     if (previousModelId !== modelId) {

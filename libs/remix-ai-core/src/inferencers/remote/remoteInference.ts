@@ -18,6 +18,28 @@ const COMPLETION_MAX_TOKENS = 30
 const INSERTION_MAX_TOKENS = 100
 
 /**
+ * Provider name the `/ai/completion` proxy expects.
+ *
+ * This endpoint is NOT the OpenRouter-fronted chat route — it is the older
+ * static proxy that pins Codestral server-side, and it still speaks the
+ * pre-transport vendor-brand vocabulary. It only recognises `mistralai` /
+ * `openai` / `anthropic`; `openrouter` is rejected with
+ * `PROVIDER_NOT_SPECIFIED`, which is how inline completion broke when the
+ * chat models were collapsed onto the openrouter transport.
+ *
+ * A `model` is deliberately not sent: the proxy ignores it and serves its
+ * own Codestral regardless.
+ */
+const COMPLETION_PROVIDER = 'mistralai'
+
+/**
+ * The proxy requires a `stop` array. Without the key it falls through to a
+ * legacy branch that answers 404, so guarantee one even when the caller
+ * (anything other than the editor's inline provider) did not set it.
+ */
+const DEFAULT_COMPLETION_STOP = ['\n\n', '```']
+
+/**
  * Build an Error whose shape matches what `parseAIErrorEnvelope` expects on
  * the upstream side (`e.response.data.error.{code,message,status,...}`).
  * Used for non-2xx responses from the streaming endpoint, where `fetch`
@@ -299,18 +321,33 @@ export class RemoteInferencer implements ICompletions, IGeneration {
     }
   }
 
+  /**
+   * Put the completion payload into the shape `/ai/completion` accepts:
+   * its own provider vocabulary, no `model`, and a `stop` array always
+   * present. See COMPLETION_PROVIDER — the chat selection's provider and
+   * model must never reach this endpoint.
+   */
+  protected completionRouting(options:IParams): IParams {
+    const { model, ...rest } = options as any
+    return {
+      ...rest,
+      provider: COMPLETION_PROVIDER,
+      stop: Array.isArray(options.stop) && options.stop.length > 0 ? options.stop : DEFAULT_COMPLETION_STOP
+    }
+  }
+
   async code_completion(prompt, promptAfter, ctxFiles, fileName, options:IParams=CompletionParams): Promise<any> {
     // `CompletionParams` is a shared module-level singleton and is the default
     // argument here — assigning to `options.max_tokens` mutated it for every
     // other caller. Spread first.
     const payload = { prompt, 'context':promptAfter, "endpoint":"code_completion",
-      'ctxFiles':ctxFiles, 'currentFileName':fileName, ...options, max_tokens: COMPLETION_MAX_TOKENS }
+      'ctxFiles':ctxFiles, 'currentFileName':fileName, ...this.completionRouting(options), max_tokens: COMPLETION_MAX_TOKENS }
     return this._makeRequest(payload, AIRequestType.COMPLETION)
   }
 
   async code_insertion(msg_pfx, msg_sfx, ctxFiles, fileName, options:IParams=InsertionParams): Promise<any> {
     const payload = { "endpoint":"code_insertion", msg_pfx, msg_sfx, 'ctxFiles':ctxFiles,
-      'currentFileName':fileName, ...options, prompt: '', max_tokens: INSERTION_MAX_TOKENS }
+      'currentFileName':fileName, ...this.completionRouting(options), prompt: '', max_tokens: INSERTION_MAX_TOKENS }
     return this._makeRequest(payload, AIRequestType.COMPLETION)
   }
 
