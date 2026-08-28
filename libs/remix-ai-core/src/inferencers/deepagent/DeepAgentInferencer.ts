@@ -359,7 +359,7 @@ export class DeepAgentInferencer implements ICompletions, IGeneration {
     this.event.emit('onApiKeyError', apiKeyError)
   }
 
-  async code_generation(prompt: string, params: IParams): Promise<string> {
+  async code_generation(prompt: string, params: IParams): Promise<string | null> {
     this.event.emit('onInference')
 
     try {
@@ -387,7 +387,7 @@ export class DeepAgentInferencer implements ICompletions, IGeneration {
     }
   }
 
-  async code_explaining(prompt: string, context: string, params: IParams): Promise<string> {
+  async code_explaining(prompt: string, context: string, params: IParams): Promise<string | null> {
     this.event.emit('onInference')
 
     try {
@@ -413,7 +413,7 @@ export class DeepAgentInferencer implements ICompletions, IGeneration {
     }
   }
 
-  async answer(prompt: string, params: IParams, context?: string): Promise<string> {
+  async answer(prompt: string, params: IParams, context?: string): Promise<string | null> {
     this.event.emit('onInference')
 
     try {
@@ -499,7 +499,7 @@ export class DeepAgentInferencer implements ICompletions, IGeneration {
     return this.answer(prompt, params, '')
   }
 
-  async vulnerability_check(prompt: string, params: IParams): Promise<string> {
+  async vulnerability_check(prompt: string, params: IParams): Promise<string | null> {
     this.event.emit('onInference')
 
     try {
@@ -1047,7 +1047,7 @@ export class DeepAgentInferencer implements ICompletions, IGeneration {
     }
   }
 
-  private async handleError(error: any, method: string, prompt: string, params: IParams): Promise<string> {
+  private async handleError(error: any, method: string, prompt: string, params: IParams): Promise<string | null> {
     remixAILogger.error(`[DeepAgentInferencer] Error in ${method}:`, error)
 
     // Try to extract a structured AIError envelope first.
@@ -1081,6 +1081,26 @@ export class DeepAgentInferencer implements ICompletions, IGeneration {
         errorType === DeepAgentErrorType.QUOTA_EXCEEDED ||
         errorType === DeepAgentErrorType.RATE_LIMIT_EXCEEDED) {
       this.emitApiKeyError(errorType, error)
+    }
+
+    // A model without tool calling fails every request, not just this one.
+    // Emit it so the plugin can warn the user and roll the selection back.
+    //
+    // Return null, not the message: null is the chat's "nothing was said"
+    // signal — it paints no assistant bubble and reads the notice strip
+    // instead. Returning the text would put a failure in the transcript as if
+    // the assistant had answered, and an empty string reads as "streaming
+    // started" and leaves an empty bubble spinning.
+    if (errorType === DeepAgentErrorType.TOOL_USE_UNSUPPORTED) {
+      this.event.emit('onApiError', {
+        type: errorType,
+        message: userMessage,
+        retryable: false,
+        originalError: error?.message,
+        timestamp: Date.now(),
+        threadId: this.sessionThreadId
+      })
+      return null
     }
 
     // Recoverable errors: surface a friendly inline message and keep the

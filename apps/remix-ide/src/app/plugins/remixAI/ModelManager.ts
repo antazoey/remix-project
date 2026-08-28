@@ -24,9 +24,35 @@ export interface ModelManagerDeps {
 
 export class ModelManager {
   private deps: ModelManagerDeps
+  /** The selection in place before the current one. Target of revertToPreviousModel. */
+  private previousModel: AIModel | null = null
 
   constructor(deps: ModelManagerDeps) {
     this.deps = deps
+  }
+
+  async revertToPreviousModel(): Promise<AIModel | null> {
+    const plugin = this.deps.plugin
+    const currentId = plugin.selectedModelId
+
+    const candidates: (AIModel | null)[] = [this.previousModel]
+    try {
+      candidates.push(await plugin.call('assistantState' as any, 'getDefaultModel'))
+    } catch (e) {
+      remixAILogger.warn('[ModelManager] getDefaultModel failed while reverting', e)
+    }
+
+    const target = candidates.find(
+      (m): m is AIModel => !!m && !!m.id && m.id !== currentId && m.available !== false
+    )
+    if (!target) {
+      remixAILogger.warn('[ModelManager] nothing to revert to — keeping', currentId)
+      return null
+    }
+
+    remixAILogger.log(`[ModelManager] reverting ${currentId} → ${target.id}`)
+    await this.setModel(target.id, [], target.provider)
+    return target
   }
 
   async setModel(modelId: string, allowedModels: string[] = [], provider?: string): Promise<void> {
@@ -58,6 +84,10 @@ export class ModelManager {
 
     // Store previous model for comparison
     const previousModelId = plugin.selectedModelId
+
+    if (previousModelId && previousModelId !== modelId && plugin.selectedModel) {
+      this.previousModel = plugin.selectedModel
+    }
 
     plugin.selectedModelId = modelId
     plugin.selectedModel = model
