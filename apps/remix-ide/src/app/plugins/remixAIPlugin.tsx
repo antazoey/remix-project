@@ -698,7 +698,11 @@ export class RemixAIPlugin extends Plugin {
     this.emit('codeCompletionUsed')
     return this.withAssistantGate(Features.AI_COMPLETION, async () => {
       if (this.completionAgent.indexer == null || this.completionAgent.indexer == undefined) await this.completionAgent.indexWorkspace()
-      params.provider = 'openrouter' // every hosted model routes through OpenRouter
+      // Deliberately no routing here: inline completion does not go through
+      // OpenRouter. It hits the `/ai/completion` proxy, which pins Codestral
+      // server-side and rejects `provider: 'openrouter'` outright with
+      // PROVIDER_NOT_SPECIFIED. RemoteInferencer.completionRouting() sets the
+      // provider that endpoint actually accepts.
       const currentFileName = await this.call('fileManager', 'getCurrentFile')
       const contextfiles = await this.completionAgent.getContextFiles(prompt)
       return await this.remoteInferencer.code_completion(prompt, promptAfter, contextfiles, currentFileName, params)
@@ -958,7 +962,7 @@ export class RemixAIPlugin extends Plugin {
     return this.withAssistantGate(Features.AI_COMPLETION, async () => {
       if (this.completionAgent.indexer == null || this.completionAgent.indexer == undefined) await this.completionAgent.indexWorkspace()
 
-      params.provider = 'openrouter' // every hosted model routes through OpenRouter
+      // See code_completion(): the `/ai/completion` proxy owns its own routing.
       const currentFileName = await this.call('fileManager', 'getCurrentFile')
       const contextfiles = await this.completionAgent.getContextFiles(msg_pfx)
       return await this.remoteInferencer.code_insertion( msg_pfx, msg_sfx, contextfiles, currentFileName, params)
