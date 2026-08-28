@@ -3,7 +3,7 @@ import { Plugin } from '@remixproject/engine';
 import { trackMatomoEvent, Features, ChatPromptMetadata } from '@remix-api'
 import { remixAILogger, RemoteInferencer, IRemoteModel, IParams, GenerationParams, AssistantParams, CodeExplainAgent, SecurityAgent, CompletionParams, OllamaInferencer } from '@remix/remix-ai-core';
 import { CodeCompletionAgent, ContractAgent, workspaceAgent, IContextType, mcpDefaultServersConfig, mcpBasicServersConfig, mcpWebSearchServersConfig } from '@remix/remix-ai-core';
-import { MCPInferencer, DeepAgentInferencer, onApiKeysChange } from '@remix/remix-ai-core';
+import { MCPInferencer, DeepAgentInferencer, onApiKeysChange, DeepAgentErrorType } from '@remix/remix-ai-core';
 import { IMCPServer, IMCPConnectionStatus } from '@remix/remix-ai-core';
 import { RemixMCPServer, createRemixMCPServer } from '@remix/remix-ai-core';
 import { AIModel, isBedrockModel, BEDROCK_API_KEY_SETTING } from '@remix/remix-ai-core';
@@ -571,6 +571,15 @@ export class RemixAIPlugin extends Plugin {
     this.remoteInferencer.event.on('onInferenceDone', () => {
       this.isInferencing = false
     })
+    // The chat/completion path classifies its own failures. Only the agent
+    // path was wired to react to them, so an unusable model picked up here
+    // stayed selected and failed every following prompt too.
+    this.remoteInferencer.event.on('onApiError', (data: any) => {
+      this.emit('onApiError', data)
+      if (data?.type === DeepAgentErrorType.TOOL_USE_UNSUPPORTED) {
+        void this.handleUnsupportedModel(data?.originalError)
+      }
+    })
 
     // Only push the model to the inference layer once /permissions has
     // resolved one. Without an id the picker is empty and downstream
@@ -1041,6 +1050,44 @@ export class RemixAIPlugin extends Plugin {
 
   async setModel(modelId: string, provider?: string, allowedModels: string[] = []) {
     return this.modelManager.setModel(modelId, allowedModels, provider)
+  }
+
+  async handleUnsupportedModel(originalError?: string): Promise<void> {
+    const failed = this.selectedModel
+    const failedName = failed?.displayName || this.selectedModelId || 'The selected model'
+
+    const warn = async (message: string, restoredId?: string) => {
+      try {
+        await this.call('assistantState' as any, 'reportError', {
+          code: 'MODEL_TOOLS_UNSUPPORTED',
+          message,
+          status: 0,
+          details: { failedModel: failed?.id, restoredModel: restoredId, originalError }
+        })
+      } catch (e) {
+        remixAILogger.warn('[RemixAI Plugin] reportError(MODEL_TOOLS_UNSUPPORTED) failed', e)
+      }
+    }
+
+    // Warn first, refine after. The chat reads the notice as soon as the
+    // request resolves, which can be before the rollback finishes — without
+    // this the user would briefly get the generic "request not sent" fallback
+    // instead of the real reason.
+    await warn(`${failedName} cannot call tools, which the assistant requires.`)
+
+    let restored: AIModel | null = null
+    try {
+      restored = await this.modelManager.revertToPreviousModel()
+    } catch (e) {
+      remixAILogger.warn('[RemixAI Plugin] revert after tool_use_unsupported failed', e)
+    }
+
+    await warn(
+      restored
+        ? `${failedName} cannot call tools, which the assistant requires. Switched back to ${restored.displayName}.`
+        : `${failedName} cannot call tools, which the assistant requires. Pick a model that supports tool calling.`,
+      restored?.id
+    )
   }
 
   async setOllamaModel(ollamaModelName: string) {

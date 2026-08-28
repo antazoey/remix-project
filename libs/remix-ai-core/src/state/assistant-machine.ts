@@ -850,6 +850,18 @@ export function selectChatNotice(snap: AssistantSnapshot): ChatNotice | null {
       message: err.message || 'The AI service ran into an issue. Please try again.',
       actionable: true
     }
+  case 'MODEL_TOOLS_UNSUPPORTED':
+    // Client-side code, raised by the RemixAI plugin when the active model
+    // turns out not to support tool calling. It has already rolled the
+    // selection back — its message names the model that failed and the one
+    // restored, so prefer it over the generic line.
+    return {
+      severity: 'warning',
+      code: err.code,
+      title: 'Model not supported',
+      message: err.message || 'The selected model cannot call tools, which the assistant requires.',
+      actionable: true
+    }
   case 'BAD_REQUEST':
   case 'MISSING_ENDPOINT':
   case 'PROVIDER_NOT_SPECIFIED':
