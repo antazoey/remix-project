@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { estimateStorage, formatBytes, getFs, MigrationPreview, previewFileSystem, StorageEstimate } from '../archive'
 import { ExportResult, exportArchive, pickSaveTarget } from '../exporter'
+import { urlWithoutHandoff } from '../domain-config'
 import { clearResumeState, importArchive, OpenedArchive, openArchive, readResumeState } from '../importer'
 import { ImportResult, MigrationProgress } from '../types'
 
@@ -73,6 +74,7 @@ export const DomainMigration: React.FC<DomainMigrationProps> = ({ targetOrigin, 
   const [archive, setArchive] = useState<OpenedArchive | null>(null)
   const [canResume, setCanResume] = useState(false)
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
+  const [reloadPrompt, setReloadPrompt] = useState(false)
   const [copied, setCopied] = useState(false)
   const [dragging, setDragging] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
@@ -134,6 +136,8 @@ export const DomainMigration: React.FC<DomainMigrationProps> = ({ targetOrigin, 
       try {
         setImportResult(await importArchive(archive, { resume }, setProgress))
         setCanResume(false)
+        // Remix reads the file system once at boot, so nothing shows until a reload.
+        setReloadPrompt(true)
       } catch (e: any) {
         setError(e?.message || String(e))
         setCanResume(!!readResumeState(archive.archiveId))
@@ -144,6 +148,12 @@ export const DomainMigration: React.FC<DomainMigrationProps> = ({ targetOrigin, 
     },
     [archive]
   )
+
+  const reloadClean = useCallback(() => {
+    const target = urlWithoutHandoff()
+    if (target !== window.location.href) window.location.replace(target)
+    else window.location.reload()
+  }, [])
 
   const copyHandoff = () => {
     if (!handoffUrl) return
@@ -399,8 +409,12 @@ export const DomainMigration: React.FC<DomainMigrationProps> = ({ targetOrigin, 
                       )}
                     </Note>
                   )}
+                  <Note color={c.am} icon="fas fa-triangle-exclamation">
+                    <strong style={{ color: c.tx }}>One last step.</strong> Remix reads your workspaces when it starts,
+                    so the imported ones stay hidden until you reload.
+                  </Note>
                   <div style={{ marginTop: 14 }}>
-                    <PrimaryButton onClick={() => window.location.reload()} dataId="domainMigrationReload">
+                    <PrimaryButton onClick={reloadClean} dataId="domainMigrationReload">
                       <i className="fas fa-rotate-right" /> Reload Remix to see your projects
                     </PrimaryButton>
                   </div>
@@ -434,9 +448,74 @@ export const DomainMigration: React.FC<DomainMigrationProps> = ({ targetOrigin, 
           </div>
         )}
       </div>
+
+      {reloadPrompt && importResult && (
+        <ReloadRequiredModal result={importResult} onReload={reloadClean} onLater={() => setReloadPrompt(false)} />
+      )}
     </div>
   )
 }
+
+/* ─── Reload gate ─── */
+
+/**
+ * The import writes straight to storage that Remix only reads at boot, so a
+ * finished import looks like nothing happened. This sits in front of the page
+ * until the user reloads, and is deliberately not dismissable by clicking away.
+ */
+const ReloadRequiredModal: React.FC<{ result: ImportResult; onReload: () => void; onLater: () => void }> = ({
+  result,
+  onReload,
+  onLater
+}) => (
+  <div
+    data-id="domainMigrationReloadModal"
+    style={{
+      position: 'fixed', inset: 0, zIndex: 10000,
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+      background: 'rgba(0,0,0,0.6)', animation: 'dmwIn 0.25s ease'
+    }}
+  >
+    <div style={{
+      background: c.bg, color: c.tx, fontFamily: sans,
+      borderRadius: 18, border: `0.5px solid ${c.gn}59`,
+      width: '100%', maxWidth: 460, padding: '26px 24px 22px', textAlign: 'center'
+    }}>
+      <div style={{
+        width: 48, height: 48, borderRadius: 14, margin: '0 auto 14px',
+        background: 'rgba(107,219,138,0.12)', border: `0.5px solid ${c.gn}47`,
+        display: 'flex', alignItems: 'center', justifyContent: 'center'
+      }}>
+        <i className="fas fa-circle-check" style={{ color: c.gn, fontSize: 22 }} />
+      </div>
+
+      <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>Import finished — reload to finish up</div>
+
+      <div style={{ fontSize: 12.5, color: c.tm, lineHeight: 1.6, marginBottom: 18 }}>
+        <strong style={{ color: c.tx }}>{result.imported}</strong> files and{' '}
+        <strong style={{ color: c.tx }}>{result.configApplied}</strong> settings are now in this browser. Remix loads
+        your workspaces at start-up, so they will not appear in the file explorer until the page reloads.
+      </div>
+
+      <PrimaryButton onClick={onReload} dataId="domainMigrationReloadModalBtn">
+        <i className="fas fa-rotate-right" /> Reload Remix now
+      </PrimaryButton>
+
+      <div style={{ marginTop: 12 }}>
+        <button
+          onClick={onLater}
+          data-id="domainMigrationReloadLater"
+          style={{
+            background: 'none', border: 'none', padding: 0,
+            color: c.td, fontSize: 11.5, cursor: 'pointer', fontFamily: sans
+          }}
+        >
+          Not yet — I want to read the import report
+        </button>
+      </div>
+    </div>
+  </div>
+)
 
 /* ─── Hero ─── */
 

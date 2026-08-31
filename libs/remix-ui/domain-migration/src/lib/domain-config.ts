@@ -74,6 +74,39 @@ export function isMigrationHandoff(
   }
 }
 
+/**
+ * The current URL without the handoff param, so reloading after an import
+ * lands on a normal Remix session instead of reopening the import step.
+ *
+ * The hash is filtered segment by segment rather than round-tripped through
+ * `URLSearchParams`, which would re-encode any other routing state Remix keeps
+ * there.
+ */
+export function urlWithoutHandoff(href: string = window.location.href): string {
+  try {
+    const url = new URL(href)
+
+    const search = new URLSearchParams(url.search)
+    if (search.has(HANDOFF_PARAM)) {
+      search.delete(HANDOFF_PARAM)
+      const rest = search.toString()
+      url.search = rest ? `?${rest}` : ''
+    }
+
+    const rawHash = url.hash.replace(/^#/, '')
+    if (rawHash) {
+      const kept = rawHash.split('&').filter((part) => part && !new RegExp(`^${HANDOFF_PARAM}(=|$)`).test(part))
+      if (kept.length !== rawHash.split('&').filter(Boolean).length) {
+        url.hash = kept.length ? `#${kept.join('&')}` : ''
+      }
+    }
+
+    return url.toString()
+  } catch {
+    return href
+  }
+}
+
 // ─── Prompt snoozing ─────────────────────────────────────────────
 /** Keyed on the destination so a changed target re-opens the conversation. */
 export const migrationDismissKey = (toDomain: string) => `remix:domain-migration:${toDomain}`
