@@ -32,7 +32,7 @@ export interface RedirectConfig {
   fromDomains: string[]
 }
 
-const EMPTY_CONFIG: RedirectConfig = { enabled: false, toDomain: '', fromDomains: [] }
+const EMPTY_CONFIG: RedirectConfig = { enabled: false, toDomain: '', fromDomains: []}
 
 /** Strip protocol, path and case so 'https://App.Remix.live/' compares equal to 'app.remix.live'. */
 export function normalizeDomain(value: unknown): string {
