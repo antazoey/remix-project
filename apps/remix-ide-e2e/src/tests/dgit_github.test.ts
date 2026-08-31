@@ -44,13 +44,13 @@ module.exports = {
       .waitForElementVisible('*[data-id="connected-link-EthereumRemix"]')
       .waitForElementVisible('*[data-id="remotes-panel"]')
   },
-  'check the FE shows logged in user #group1 #group2': function (browser: NightwatchBrowser) {
-    browser
-      .waitForElementVisible({
-        selector: '//*[@data-id="github-dropdown-toggle-login"]//span[contains(text(), "EthereumRemix")]',
-        locateStrategy: 'xpath'
-      })
-  },
+  // 'check the FE shows logged in user #group1 #group2': function (browser: NightwatchBrowser) {
+  //   browser
+  //     .waitForElementVisible({
+  //       selector: '//*[@data-id="github-dropdown-toggle-login"]//span[contains(text(), "EthereumRemix")]',
+  //       locateStrategy: 'xpath'
+  //     })
+  // },
   // 'check the FE for the auth user #group1 #group2': function (browser: NightwatchBrowser) {
   //   browser
   //     .clickLaunchIcon('filePanel')

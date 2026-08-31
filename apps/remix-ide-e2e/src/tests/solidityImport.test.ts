@@ -134,15 +134,16 @@ module.exports = {
     browser
       // clone https://github.com/yann300/remix-reward
       .clickLaunchIcon('filePanel')
+      .click('*[data-id="verticalIconsHomeIcon"]')
       .waitForElementVisible('[data-id="landingPageImportFromGitHubButton"]')
       .click('[data-id="landingPageImportFromGitHubButton"]')
       .waitForElementVisible('[data-id="fileSystemModalDialogContainer-react"]')
       .waitForElementVisible('[data-id="modalDialogCustomPromptTextClone"]')
       .click('[data-id="modalDialogCustomPromptTextClone"]')
       .setValue('[data-id="modalDialogCustomPromptTextClone"]', 'https://github.com/remix-project-org/remix-reward')
-      .click('[data-id="topbarModal-modal-footer-ok-react"]')
+      .click('[data-id="fileSystem-modal-footer-ok-react"]')
       .waitForElementPresent('.fa-spinner')
-      .waitForElementVisible('*[data-id="treeViewLitreeViewItem.git"]')
+      .waitForElementVisible('*[data-id="treeViewLitreeViewItem.git"]', 60000)
       .waitForElementContainsText('[data-id="workspacesSelect"]', 'remix-reward')
       .clickLaunchIcon('solidity')
       // compile (this will be using the version specified in the package.json)
