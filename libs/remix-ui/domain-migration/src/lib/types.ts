@@ -12,6 +12,7 @@
  */
 
 export const MANIFEST_ENTRY = 'manifest.json'
+export const SETTINGS_ENTRY = 'settings.json'
 export const FILES_PREFIX = 'files/'
 export const ARCHIVE_FORMAT_VERSION = 1
 
@@ -31,8 +32,13 @@ export interface MigrationManifest {
   totalFiles: number
   totalBytes: number
   entries: MigrationEntry[]
-  /** Allow-listed localStorage settings. Never contains credentials. */
-  config: Record<string, string>
+  /**
+   * Allow-listed localStorage settings. Never contains credentials.
+   * Written to `settings.json`; kept here only to read older archives.
+   */
+  config?: Record<string, string>
+  /** How many settings the archive carries, without extracting them. */
+  settingsCount?: number
   /** Top level workspace names found under `.workspaces/`. */
   workspaces: string[]
   /** Cloud workspaces left out of the archive; they resync from S3. */
@@ -73,6 +79,8 @@ export interface ImportResult {
   /** Original workspace name -> name actually used locally. */
   renamedWorkspaces: Record<string, string>
   configApplied: number
+  /** Settings present in the archive but left alone because a local value exists. */
+  configSkipped: number
 }
 
 export type ProgressCallback = (progress: MigrationProgress) => void

@@ -9,7 +9,8 @@ import {
   MigrationFs,
   MigrationIssue,
   MigrationManifest,
-  ProgressCallback
+  ProgressCallback,
+  SETTINGS_ENTRY
 } from './types'
 
 const RESUME_PREFIX = 'remix-migration/resume/'
@@ -159,7 +160,8 @@ export async function importArchive(
     }
   }
 
-  const configApplied = applyConfig(manifest.config, options.overwriteConfig)
+  const settings = await readSettings(zip, manifest)
+  const { applied, skipped: configSkipped } = applyConfig(settings, options.overwriteConfig)
   clearResumeState(archiveId)
 
   onProgress({
@@ -171,7 +173,19 @@ export async function importArchive(
     bytesTotal: manifest.totalBytes
   })
 
-  return { imported, skipped, issues, renamedWorkspaces: renames, configApplied }
+  return { imported, skipped, issues, renamedWorkspaces: renames, configApplied: applied, configSkipped }
+}
+
+/** Settings moved out of the manifest into their own entry; read both. */
+async function readSettings(zip: JSZip, manifest: MigrationManifest): Promise<Record<string, string>> {
+  const entry = zip.file(SETTINGS_ENTRY)
+  if (!entry) return manifest.config || {}
+  try {
+    const parsed = JSON.parse(await entry.async('string'))
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return manifest.config || {}
+  }
 }
 
 async function assertEnoughSpace(manifest: MigrationManifest, startIndex: number): Promise<void> {

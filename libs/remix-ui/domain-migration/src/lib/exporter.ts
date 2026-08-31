@@ -6,7 +6,8 @@ import {
   FILES_PREFIX,
   MANIFEST_ENTRY,
   MigrationManifest,
-  ProgressCallback
+  ProgressCallback,
+  SETTINGS_ENTRY
 } from './types'
 
 export interface ExportResult {
@@ -78,6 +79,8 @@ export async function exportArchive(target: SaveTarget, onProgress: ProgressCall
 
   if (!scan.entries.length) throw new Error('There are no files to export.')
 
+  const settings = collectConfig()
+
   const manifest: MigrationManifest = {
     formatVersion: ARCHIVE_FORMAT_VERSION,
     createdAt: new Date().toISOString(),
@@ -85,18 +88,23 @@ export async function exportArchive(target: SaveTarget, onProgress: ProgressCall
     totalFiles: scan.entries.length,
     totalBytes: scan.totalBytes,
     entries: scan.entries,
-    config: collectConfig(),
+    settingsCount: Object.keys(settings).length,
     workspaces: scan.workspaces,
     cloudWorkspaces: scan.cloudWorkspaces
   }
 
   zip.file(MANIFEST_ENTRY, JSON.stringify(manifest))
+  // Separate entry so settings stay readable without parsing the file index.
+  zip.file(SETTINGS_ENTRY, JSON.stringify(settings, null, 2))
   zip.file(
     'readme.txt',
     'Remix migration archive.\n\n' +
       `Exported from ${manifest.sourceOrigin} on ${manifest.createdAt}.\n` +
-      `${manifest.totalFiles} files, ${manifest.totalBytes} bytes.\n\n` +
-      'Import it with "Import from a migration archive" in the workspace menu.\n' +
+      `${manifest.totalFiles} files, ${manifest.totalBytes} bytes, ${manifest.settingsCount} settings.\n\n` +
+      'files/       your workspaces, byte for byte\n' +
+      'settings.json  your Remix preferences (no credentials)\n' +
+      'manifest.json  file list with a SHA-256 per file\n\n' +
+      'Import it with "Move your projects" in the workspace menu.\n' +
       'Keep this file until you have confirmed your projects opened correctly.\n'
   )
 

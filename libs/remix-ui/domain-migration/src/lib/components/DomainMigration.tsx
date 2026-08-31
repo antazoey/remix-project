@@ -204,8 +204,8 @@ export const DomainMigration: React.FC<DomainMigrationProps> = ({ targetOrigin, 
                 </PrimaryButton>
               </div>
               <div style={{ fontSize: 11.5, color: c.td, marginTop: 10, lineHeight: 1.5 }}>
-                Your browser will ask where to save the file. Every file gets a checksum so the import on {destination}{' '}
-                can prove nothing was damaged on the way.
+                Your browser will ask where to save the file. Your Remix preferences — theme, layout, networks, recent
+                workspaces — travel with it. Sign-in details stay behind, so you&apos;ll log in again on {destination}.
               </div>
             </Card>
           )}
@@ -217,8 +217,9 @@ export const DomainMigration: React.FC<DomainMigrationProps> = ({ targetOrigin, 
               {exportResult && (
                 <Note color={c.gn} icon="fas fa-circle-check" dataId="domainMigrationExportDone">
                   Saved <code style={{ color: c.tx, fontFamily: mono }}>{exportResult.fileName}</code> —{' '}
-                  {exportResult.manifest.totalFiles} files ({formatBytes(exportResult.manifest.totalBytes)}). Check your
-                  downloads folder if you can&apos;t see it.
+                  {exportResult.manifest.totalFiles} files ({formatBytes(exportResult.manifest.totalBytes)}) and{' '}
+                  {exportResult.manifest.settingsCount ?? 0} settings. Check your downloads folder if you can&apos;t see
+                  it.
                 </Note>
               )}
 
@@ -323,7 +324,7 @@ export const DomainMigration: React.FC<DomainMigrationProps> = ({ targetOrigin, 
                   <div style={{ fontSize: 11.5, color: c.tm, marginBottom: 12 }}>
                     From <strong style={{ color: c.tx, fontFamily: mono }}>{archive.manifest.sourceOrigin}</strong>,
                     exported {new Date(archive.manifest.createdAt).toLocaleString()} ·{' '}
-                    {Object.keys(archive.manifest.config || {}).length} settings
+                    {archive.manifest.settingsCount ?? Object.keys(archive.manifest.config || {}).length} settings
                   </div>
 
                   {canResume && (
@@ -367,7 +368,11 @@ export const DomainMigration: React.FC<DomainMigrationProps> = ({ targetOrigin, 
                   <Note color={c.gn} icon="fas fa-circle-check">
                     Restored <strong style={{ color: c.tx }}>{importResult.imported}</strong> files
                     {importResult.skipped > 0 && <> ({importResult.skipped} already done)</>} and applied{' '}
-                    {importResult.configApplied} settings.
+                    {importResult.configApplied} settings
+                    {importResult.configSkipped > 0 && (
+                      <> ({importResult.configSkipped} kept as they already are here)</>
+                    )}
+                    .
                   </Note>
                   {Object.keys(importResult.renamedWorkspaces).length > 0 && (
                     <Note color={c.am} icon="fas fa-tag">
@@ -488,12 +493,30 @@ const Hero: React.FC<{ destination: string; targetOrigin?: string; days: number 
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke={c.td} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
           <path d="M3 8h10M9 4l4 4-4 4" />
         </svg>
-        <span style={{
-          color: c.cy, background: 'rgba(47,191,177,0.08)', border: '0.5px solid rgba(47,191,177,0.28)',
-          borderRadius: 6, padding: '4px 8px', fontWeight: 600
-        }}>
-          {targetOrigin || 'coming soon'}
-        </span>
+        {targetOrigin ? (
+          <a
+            href={`https://${targetOrigin}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={`Open ${targetOrigin}`}
+            data-id="domainMigrationToDomainLink"
+            style={{
+              color: c.cy, background: 'rgba(47,191,177,0.08)', border: '0.5px solid rgba(47,191,177,0.28)',
+              borderRadius: 6, padding: '4px 8px', fontWeight: 600, textDecoration: 'none',
+              display: 'inline-flex', alignItems: 'center', gap: 6
+            }}
+          >
+            {targetOrigin}
+            <i className="fas fa-arrow-up-right-from-square" style={{ fontSize: 9 }} />
+          </a>
+        ) : (
+          <span style={{
+            color: c.cy, background: 'rgba(47,191,177,0.08)', border: '0.5px solid rgba(47,191,177,0.28)',
+            borderRadius: 6, padding: '4px 8px', fontWeight: 600
+          }}>
+            coming soon
+          </span>
+        )}
         {days !== null && (
           <span style={{
             color: days <= 7 ? c.am : c.tm,

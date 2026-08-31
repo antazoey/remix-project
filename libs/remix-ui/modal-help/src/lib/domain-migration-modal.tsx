@@ -131,6 +131,35 @@ const GhostButton: React.FC<{ onClick: () => void; children: React.ReactNode }> 
   )
 }
 
+/** The destination as a link, for users who have already moved or have nothing to bring. */
+const DomainLink: React.FC<{ toDomain: string; children?: React.ReactNode; style?: React.CSSProperties }> = ({
+  toDomain,
+  children,
+  style
+}) => {
+  const [h, setH] = useState(false)
+  return (
+    <a
+      href={`https://${toDomain}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={(e) => e.stopPropagation()}
+      onMouseEnter={() => setH(true)}
+      onMouseLeave={() => setH(false)}
+      data-id="domainMigrationModalToDomainLink"
+      title={`Open ${toDomain}`}
+      style={{
+        color: c.cy,
+        textDecoration: h ? 'underline' : 'none',
+        cursor: 'pointer',
+        ...style
+      }}
+    >
+      {children ?? toDomain}
+    </a>
+  )
+}
+
 const SectionLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <div style={{
     fontFamily: "'JetBrains Mono', monospace",
@@ -145,7 +174,13 @@ const SectionLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   </div>
 )
 
-const Step: React.FC<{ n: number; title: string; body: string; color: string }> = ({ n, title, body, color }) => (
+const Step: React.FC<{ n: number; title: string; body: string; color: string; titleExtra?: React.ReactNode }> = ({
+  n,
+  title,
+  body,
+  color,
+  titleExtra
+}) => (
   <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
     <div style={{
       width: 24, height: 24, borderRadius: 7, flexShrink: 0,
@@ -157,7 +192,10 @@ const Step: React.FC<{ n: number; title: string; body: string; color: string }> 
       {n}
     </div>
     <div style={{ flex: 1, minWidth: 0 }}>
-      <div style={{ fontSize: 12.5, fontWeight: 600, color: c.tx, marginBottom: 2 }}>{title}</div>
+      <div style={{ fontSize: 12.5, fontWeight: 600, color: c.tx, marginBottom: 2, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        {title}
+        {titleExtra}
+      </div>
       <div style={{ fontSize: 11.5, color: c.tm, lineHeight: 1.45 }}>{body}</div>
     </div>
   </div>
@@ -286,13 +324,20 @@ const DomainMigrationModal: React.FC<DomainMigrationModalProps> = ({
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke={c.td} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M3 8h10M9 4l4 4-4 4" />
               </svg>
-              <span style={{
-                color: c.cy, background: 'rgba(47,191,177,0.08)',
-                border: '0.5px solid rgba(47,191,177,0.28)',
-                borderRadius: 6, padding: '4px 8px', fontWeight: 600
-              }}>
+              <DomainLink
+                toDomain={toDomain}
+                style={{
+                  background: 'rgba(47,191,177,0.08)',
+                  border: '0.5px solid rgba(47,191,177,0.28)',
+                  borderRadius: 6, padding: '4px 8px', fontWeight: 600,
+                  display: 'inline-flex', alignItems: 'center', gap: 6
+                }}
+              >
                 {toDomain}
-              </span>
+                <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M6 3H3v10h10v-3M9.5 2.5H13.5V6.5M13.5 2.5L7 9" />
+                </svg>
+              </DomainLink>
               {days !== null && (
                 <span style={{
                   color: days <= 7 ? c.am : c.tm,
@@ -326,7 +371,8 @@ const DomainMigrationModal: React.FC<DomainMigrationModalProps> = ({
               <Step n={1} color={c.cy} title="Export an archive here"
                 body="Every workspace and your settings are packed into one file, with a checksum for each file." />
               <Step n={2} color={c.pu} title={`Open ${toDomain}`}
-                body="Same Remix, new address. Sign in as usual if you have an account." />
+                body="Same Remix, new address. Sign in as usual if you have an account."
+                titleExtra={<DomainLink toDomain={toDomain} style={{ fontSize: 11, fontWeight: 500 }}>open now</DomainLink>} />
               <Step n={3} color={c.gn} title="Import the archive there"
                 body="Checksums are verified as files are restored, so nothing arrives silently damaged." />
             </div>
@@ -368,6 +414,9 @@ const DomainMigrationModal: React.FC<DomainMigrationModalProps> = ({
               <GhostButton onClick={() => onDismiss('never')}>
                 <i className="far fa-eye-slash" /> Don&apos;t show again
               </GhostButton>
+            </div>
+            <div style={{ fontSize: 11.5, color: c.td, textAlign: 'center', marginTop: 10 }}>
+              Already moved, or nothing to bring? <DomainLink toDomain={toDomain}>Go to {toDomain}</DomainLink>
             </div>
           </div>
 
