@@ -136,6 +136,14 @@ export interface AppConfig {
   // Limits
   'limits.max_file_size_mb'?: number
 
+  // Domain migration — set on the origin being retired
+  /** Send visitors with an empty browser storage straight to `migration.to_domain`. */
+  'migration.redirect_enabled'?: boolean
+  /** Host users are being moved to, e.g. 'app.remix.live'. */
+  'migration.to_domain'?: string
+  /** Comma-separated hosts the redirect applies to, e.g. 'remix.ethereum.org, remix.live'. */
+  'migration.from_domains'?: string
+
   // Settings
   'settings.account_management'?: boolean
 
