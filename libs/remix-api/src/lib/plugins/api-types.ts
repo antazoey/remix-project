@@ -144,6 +144,8 @@ export interface AppConfig {
   'migration.to_domain'?: string
   /** Optional ISO 8601 date after which the old origin stops being updated. */
   'migration.deadline'?: string
+  /** Send visitors with an empty browser storage straight to `migration.to_domain`. */
+  'migration.redirect_enabled'?: boolean
 
   // Settings
   'settings.account_management'?: boolean

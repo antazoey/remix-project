@@ -52,7 +52,8 @@ export interface AppEvent extends MatomoEventBase {
     | 'queryParams-calls'
     | 'queryParams-migrate'
     | 'MobileRedirect'
-    | 'MobileRedirectOverride';
+    | 'MobileRedirectOverride'
+    | 'FreshUserDomainRedirect';
 }
 
 export interface MigrateEvent extends MatomoEventBase {
