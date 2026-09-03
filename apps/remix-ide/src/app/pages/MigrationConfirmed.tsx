@@ -122,7 +122,7 @@ const Confirmed: React.FC<{ toDomain: string }> = ({ toDomain }) => (
       here, untouched, in case you ever need them.
     </p>
 
-    <a href={`https://${toDomain}`} data-id="migrationConfirmedGo" style={primaryStyle}>
+    <a href={`https://${toDomain}/?migrationdone`} data-id="migrationConfirmedGo" style={primaryStyle}>
       Go to {toDomain}
     </a>
 

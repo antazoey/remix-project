@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { estimateStorage, formatBytes, getFs, MigrationPreview, previewFileSystem, StorageEstimate } from '../archive'
 import { ExportResult, exportArchive, pickSaveTarget } from '../exporter'
 import { clearResumeState, importArchive, OpenedArchive, openArchive, readResumeState } from '../importer'
+import { setPendingConfirmation } from '../domain-config'
 import { ImportResult, MigrationProgress } from '../types'
 
 export interface DomainMigrationProps {
@@ -148,6 +149,9 @@ export const DomainMigration: React.FC<DomainMigrationProps> = ({ targetOrigin, 
       try {
         setImportResult(await importArchive(archive, { resume }, setProgress))
         setCanResume(false)
+        // Survives the reload below, so the confirmation step stays reachable.
+        const origin = archive.manifest.sourceOrigin
+        if (origin && new URL(origin).host !== window.location.host) setPendingConfirmation(origin)
       } catch (e: any) {
         setError(e?.message || String(e))
         setCanResume(!!readResumeState(archive.archiveId))
@@ -413,28 +417,28 @@ export const DomainMigration: React.FC<DomainMigrationProps> = ({ targetOrigin, 
                       )}
                     </Note>
                   )}
-                  <div style={{ marginTop: 14, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                    <PrimaryButton onClick={() => window.location.reload()} dataId="domainMigrationReload">
-                      <i className="fas fa-rotate-right" /> Reload Remix to see your projects
-                    </PrimaryButton>
-                  </div>
-
-                  {confirmUrl && (
-                    <div style={{
-                      marginTop: 18, paddingTop: 16, borderTop: '0.5px solid rgba(255,255,255,0.06)'
-                    }}>
-                      <div style={{ fontSize: 12.5, color: c.tm, lineHeight: 1.6, marginBottom: 12 }}>
-                        <strong style={{ color: c.tx }}>One last thing.</strong> Check your projects opened correctly,
-                        then let the old site know you&apos;re done. It will send you straight here from now on instead
-                        of loading the old Remix.
+                  {confirmUrl ? (
+                    <>
+                      <div style={{ fontSize: 12.5, color: c.tm, lineHeight: 1.6, margin: '14px 0 12px' }}>
+                        <strong style={{ color: c.tx }}>One last step.</strong> Tell {sourceHost} you&apos;ve moved, and
+                        it will bring you straight here from now on instead of loading the old Remix. Opens in a new
+                        tab — nothing there is deleted.
                       </div>
-                      <PrimaryButton href={confirmUrl} dataId="domainMigrationConfirmLink">
-                        <i className="fas fa-circle-check" />
-                        Finish up on {sourceHost}
+                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                        <PrimaryButton href={confirmUrl} dataId="domainMigrationConfirmLink">
+                          <i className="fas fa-circle-check" />
+                          Finish up on {sourceHost}
+                        </PrimaryButton>
+                        <GhostButton onClick={() => window.location.reload()} dataId="domainMigrationReload">
+                          <i className="fas fa-rotate-right" /> Reload to see my projects
+                        </GhostButton>
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ marginTop: 14 }}>
+                      <PrimaryButton onClick={() => window.location.reload()} dataId="domainMigrationReload">
+                        <i className="fas fa-rotate-right" /> Reload Remix to see your projects
                       </PrimaryButton>
-                      <div style={{ fontSize: 11, color: c.td, marginTop: 8 }}>
-                        Opens {sourceHost} briefly to record that you&apos;ve moved. Nothing there is deleted.
-                      </div>
                     </div>
                   )}
                 </div>

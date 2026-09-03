@@ -37,6 +37,8 @@
   "remixApp.migrationBannerOldAction": "Move my projects",
   "remixApp.migrationBannerNew": "Welcome to the new home of Remix.",
   "remixApp.migrationBannerNewAction": "Still need your files from {fromDomain}?",
+  "remixApp.migrationBannerPending": "Almost done. Let {fromDomain} know you've moved so it stops loading the old Remix.",
+  "remixApp.migrationBannerPendingAction": "Finish up",
   "remixApp.aiWorkspaceGenerating": "Your workspace is being generated. Please wait while I generate the workspace for you. It won't be long.",
   "remixApp.closeNotification": "Close",
 

@@ -107,6 +107,61 @@ export function urlWithoutHandoff(href: string = window.location.href): string {
   }
 }
 
+// ─── Pending confirmation ────────────────────────────────────────
+
+/**
+ * Set on the destination once an import succeeds, and cleared when the user
+ * comes back from confirming. Without it, reloading to see the imported
+ * projects would drop the confirmation link and there would be no way back
+ * to it.
+ */
+const PENDING_CONFIRM_KEY = 'remix:migration-pending-confirm'
+const DONE_PARAM = 'migrationdone'
+
+/** @param sourceOrigin full origin the archive came from, e.g. `https://remix.ethereum.org` */
+export function setPendingConfirmation(sourceOrigin: string): void {
+  try {
+    localStorage.setItem(PENDING_CONFIRM_KEY, sourceOrigin)
+  } catch {
+    // storage blocked — the wizard still shows the link in this session
+  }
+}
+
+export function readPendingConfirmation(): string | null {
+  try {
+    const value = localStorage.getItem(PENDING_CONFIRM_KEY)
+    if (!value) return null
+    // Only ever used to build a link back, so it must be a real origin.
+    const url = new URL(value)
+    return url.protocol.startsWith('http') ? url.origin : null
+  } catch {
+    return null
+  }
+}
+
+export function clearPendingConfirmation(): void {
+  try {
+    localStorage.removeItem(PENDING_CONFIRM_KEY)
+  } catch {
+    // nothing to undo
+  }
+}
+
+/** True when the old domain sent the user back after confirming. */
+export function isMigrationDoneReturn(
+  hash: string = window.location.hash,
+  search: string = window.location.search
+): boolean {
+  try {
+    return (
+      new URLSearchParams(hash.replace(/^#/, '')).has(DONE_PARAM) ||
+      new URLSearchParams(search).has(DONE_PARAM)
+    )
+  } catch {
+    return false
+  }
+}
+
 // ─── Prompt snoozing ─────────────────────────────────────────────
 /** Keyed on the destination so a changed target re-opens the conversation. */
 export const migrationDismissKey = (toDomain: string) => `remix:domain-migration:${toDomain}`

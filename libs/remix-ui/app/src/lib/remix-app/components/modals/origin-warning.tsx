@@ -1,6 +1,12 @@
 import React, { useContext, useEffect, useState } from 'react'
 import { useIntl } from 'react-intl'
-import { normalizeDomain, parseMigrationConfig } from '@remix-ui/domain-migration'
+import {
+  clearPendingConfirmation,
+  isMigrationDoneReturn,
+  normalizeDomain,
+  parseMigrationConfig,
+  readPendingConfirmation
+} from '@remix-ui/domain-migration'
 import { AppContext } from '../../context/context'
 
 type Variant = 'warning' | 'migration'
@@ -34,6 +40,27 @@ export const OriginWarning = () => {
   useEffect(() => {
     const host = normalizeDomain(window.location.host)
     const migration = parseMigrationConfig((key) => (appConfig as any)?.[key])
+
+    if (isMigrationDoneReturn()) clearPendingConfirmation()
+
+    // Someone who imported and then reloaded would otherwise lose the
+    // confirmation link along with the wizard's state.
+    const pending = readPendingConfirmation()
+    if (pending) {
+      const pendingHost = normalizeDomain(pending)
+      if (pendingHost && pendingHost !== host) {
+        setBanner({
+          id: 'migration-confirm',
+          variant: 'migration',
+          message: intl.formatMessage({ id: 'remixApp.migrationBannerPending' }, { fromDomain: pendingHost }),
+          action: {
+            label: intl.formatMessage({ id: 'remixApp.migrationBannerPendingAction' }),
+            href: `${pending}/#migrated`
+          }
+        })
+        return
+      }
+    }
 
     // Migration banners win: they carry an action, the legacy origin warnings
     // are only informational.
