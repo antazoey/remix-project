@@ -73,7 +73,7 @@ export const OriginWarning = () => {
           setBanner({
             id: 'migration-new',
             variant: 'migration',
-            message: intl.formatMessage({ id: 'remixApp.migrationBannerNew' }),
+            message: intl.formatMessage({ id: 'remixApp.migrationBannerNew' }, { toDomain: migration.toDomain }),
             action: {
               label: intl.formatMessage({ id: 'remixApp.migrationBannerNewAction' }, { fromDomain: origin }),
               // Opt out on the way in, or the old site bounces a migrated user
