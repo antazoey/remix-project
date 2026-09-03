@@ -19,7 +19,6 @@ import { endpointUrls, initEndpoints } from '@remix-endpoints-helper'
 const FRESH_FLAG = '__remixVisitIsFresh'
 
 const CONFIG_CACHE_KEY = 'remix:migration-redirect-config'
-const OPT_OUT_KEY = 'remix:no-migration-redirect'
 const OPT_OUT_FLAG = 'nomigrationredirect'
 /** Keyed on the destination so a changed target can still redirect once. */
 const redirectedKey = (toDomain: string) => `remix:migration-redirected:${toDomain}`
@@ -130,15 +129,15 @@ export function readCachedRedirectConfig(): RedirectConfig {
 /**
  * `?nomigrationredirect` in the URL (or hash) pins the visitor to this origin,
  * for support, e2e runs and anyone deliberately coming back.
+ *
+ * Deliberately not persisted: the flag holds only while it is in the URL, so
+ * one visit to fetch an old file cannot silently disable the redirect forever.
+ * Remix keeps the parameter across its own search-to-hash rewrite, which is
+ * why both are checked.
  */
 export function isRedirectOptedOut(): boolean {
   try {
-    const inUrl = `${window.location.search || ''}${window.location.hash || ''}`.indexOf(OPT_OUT_FLAG) !== -1
-    if (inUrl) {
-      try { localStorage.setItem(OPT_OUT_KEY, 'true') } catch { /* storage blocked */ }
-      return true
-    }
-    return localStorage.getItem(OPT_OUT_KEY) === 'true'
+    return `${window.location.search || ''}${window.location.hash || ''}`.indexOf(OPT_OUT_FLAG) !== -1
   } catch {
     return false
   }

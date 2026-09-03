@@ -128,7 +128,7 @@ const Confirmed: React.FC<{ toDomain: string }> = ({ toDomain }) => (
 
     <Footnote>
       Need to come back? Open this address with{' '}
-      <code style={{ fontFamily: mono, color: c.tm }}>?nomigrationredirect</code> and the redirect stops.
+      <code style={{ fontFamily: mono, color: c.tm }}>?nomigrationredirect</code> and it stays put for that visit.
     </Footnote>
   </>
 )
