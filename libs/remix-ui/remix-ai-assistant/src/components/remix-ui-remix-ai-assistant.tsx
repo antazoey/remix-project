@@ -1,9 +1,9 @@
 /* eslint-disable @nrwl/nx/enforce-module-boundaries */
-import React, { useState, useEffect, useCallback, useRef, useImperativeHandle, MutableRefObject, useContext } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, useRef, useImperativeHandle, MutableRefObject, useContext } from 'react'
 //@ts-ignore
 import '../css/remix-ai-assistant.css'
 
-import { ChatCommandParser, GenerationParams, ChatHistory, HandleStreamResponse, AIModel, ANONYMOUS_FALLBACK_MODELS, remixAILogger, modelKey, parseModelKey, findModel, applyByokKeyPolicy, BYOK_API_KEY_SETTINGS, modelTransportProvider, onApiKeysChange, type ModelTransport } from '@remix/remix-ai-core'
+import { ChatCommandParser, GenerationParams, ChatHistory, HandleStreamResponse, AIModel, ANONYMOUS_FALLBACK_MODELS, remixAILogger, modelKey, parseModelKey, findModel, applyByokKeyPolicy, BYOK_API_KEY_SETTINGS, modelTransportProvider, onApiKeysChange, isAutoModelId, type ModelTransport } from '@remix/remix-ai-core'
 import { ToolApprovalRequest, ApiKeyErrorEvent } from '@remix/remix-ai-core'
 import { HandleOpenAICompatibleResponse, HandleOllamaResponse } from '@remix/remix-ai-core'
 //@ts-ignore
@@ -96,6 +96,7 @@ export const RemixUiRemixAiAssistant = React.forwardRef<
     firstPromptStateRef.current = { count: messages.length, conversationId: props.currentConversationId }
   }, [messages, props.currentConversationId])
   const [isThinking, setIsThinking] = useState(false)
+  const [runModel, setRunModel] = useState<string | null>(null)
   const [showModelSelector, setShowModelSelector] = useState(false)
   // OpenRouter is the router every hosted model arrives on, so it is the only
   // sensible value before a selection resolves from /permissions.
@@ -329,6 +330,9 @@ export const RemixUiRemixAiAssistant = React.forwardRef<
 
     // 3. Stop the spinner so the new conversation starts clean
     setIsStreaming(false)
+    // The model that answered in the previous conversation says nothing about
+    // this one.
+    setRunModel(null)
     streamingAssistantIdRef.current = null
     if (clearToolTimeoutRef.current) {
       clearTimeout(clearToolTimeoutRef.current)
@@ -462,6 +466,13 @@ export const RemixUiRemixAiAssistant = React.forwardRef<
   }, [props.plugin, availableModels])
 
   useEffect(() => { selectedModelRef.current = selectedModel }, [selectedModel])
+  useEffect(() => { setRunModel(null) }, [selectedModel?.id, selectedModel?.provider])
+
+  const runModelLabel = useMemo(() => {
+    if (!runModel) return ''
+    const known = availableModels.find(m => m.id === runModel)
+    return known?.displayName || runModel
+  }, [runModel, availableModels])
 
   // Which BYOK keys are currently stored. Deleting a key in Settings clears the
   // setting, so the provider it belonged to must stop being selectable — either
@@ -854,6 +865,12 @@ export const RemixUiRemixAiAssistant = React.forwardRef<
       }
     }
 
+    const handleModelUsed = (data: { model: string; threadId?: string }) => {
+      if (isStoppedRef.current) return
+      if (!isAutoModelId(selectedModelRef.current?.id)) return
+      setRunModel(data?.model || null)
+    }
+
     // Handle thinking events from Ollama (DeepAgent path)
     const handleThinking = (data: { isThinking: boolean; content?: string; threadId?: string }) => {
       if (isStoppedRef.current) return
@@ -1012,6 +1029,7 @@ export const RemixUiRemixAiAssistant = React.forwardRef<
     props.plugin.on('remixAI', 'onStreamResult', handleStreamChunk)
     props.plugin.on('remixAI', 'onStreamComplete', handleStreamComplete)
     props.plugin.on('remixAI', 'onThinking', handleThinking)
+    props.plugin.on('remixAI', 'onModelUsed', handleModelUsed)
     props.plugin.on('remixAI', 'onToolCall', handleToolCall)
     props.plugin.on('remixAI', 'onSubagentStart', handleSubagentStart)
     props.plugin.on('remixAI', 'onSubagentComplete', handleSubagentComplete)
@@ -1194,6 +1212,7 @@ export const RemixUiRemixAiAssistant = React.forwardRef<
       props.plugin.off('remixAI', 'onStreamResult')
       props.plugin.off('remixAI', 'onStreamComplete')
       props.plugin.off('remixAI', 'onThinking')
+      props.plugin.off('remixAI', 'onModelUsed')
       props.plugin.off('remixAI', 'onToolCall')
       props.plugin.off('remixAI', 'onSubagentStart')
       props.plugin.off('remixAI', 'onSubagentComplete')
@@ -1727,6 +1746,8 @@ export const RemixUiRemixAiAssistant = React.forwardRef<
       // intentionally memoized without `messages`, so its closure value is stale.
       trackPromptActivity(metadata, trimmed.length, firstPromptStateRef.current.count)
 
+      // The previous run's model no longer describes what is about to answer.
+      setRunModel(null)
       // Reset the per-turn "stream consumed" flag — it gates the
       // post-await duplicate-bubble guard further down.
       streamConsumedThisTurnRef.current = false
@@ -2402,6 +2423,7 @@ export const RemixUiRemixAiAssistant = React.forwardRef<
       },
       clearChat: () => {
         setMessages([])
+        setRunModel(null)
       },
       getHistory: () => messages
     }),
@@ -2840,6 +2862,18 @@ export const RemixUiRemixAiAssistant = React.forwardRef<
             onAction={(action) => { void handleChatNoticeAction(action) }}
             onDismiss={dismissChatNotice}
           />
+        )}
+        {runModel && (
+          <div className="rai-run-model-row">
+            <div
+              className="rai-run-model"
+              data-id="remix-ai-run-model"
+              title={`Auto selected ${runModel} for this answer`}
+            >
+              <i className="fa-solid fa-wand-magic-sparkles rai-run-model__icon"></i>
+              <span className="rai-run-model__text">Using {runModelLabel}</span>
+            </div>
+          </div>
         )}
         {
           messages.length > 0 ? (

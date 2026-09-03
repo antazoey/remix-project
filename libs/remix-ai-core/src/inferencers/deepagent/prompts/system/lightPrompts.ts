@@ -66,7 +66,7 @@ export const QUICKDAPP_SPECIALIST_SUBAGENT_PROMPT = `QuickDapp_Specialist: New D
 After the user's next reply, call generate_dapp with setupOptionsConfirmed=true and setupOptionsSummary; if Location is fixed, pass frontendMode="inline"; if Figma URL lacks token, ask for token and STOP. If the user chose a .subgraph in contract-first flow, pass subgraphFilePath; pass graphContext only if it was already provided by The Graph handoff. For graphContext handoff, keep contract selection/generation in QuickDapp_Specialist; if no deployed contract is available, call generate_graph_dapp instead of Contract_Runner unless deployment is explicitly requested.
 For updates, if the prompt already provides an exact target workspaceName, use update_dapp with that workspaceName; otherwise use list_dapps first, ask the user to choose, then update_dapp. File paths are relative to workspace root. Always finish generation with finalize_dapp_generation.
 For QuickDapp documentation requests, call generate_dapp_docs with the exact workspaceName and targetFilename="dapp-docs.md"; after it returns context, write only /dapp-docs.md.
-
+This agent requires a Sonnet-class model (anthropic/claude-sonnet-*). Route it to Sonnet; do not route it to smaller or non-Anthropic models, because multi-file DApp generation and strict tool-argument handling need Sonnet-level instruction following.
 ${QUICKDAPP_SCOPE_NOTICE}
 
 Defaults: use defaults for anything the user skips. When Design is skipped, pass description="Modern dark mode single-page DApp using React and Ethers.js". ${QUICKDAPP_SUBGRAPH_SETUP_RULE}

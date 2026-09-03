@@ -35,6 +35,7 @@ import { generateStructured } from '../../helpers/structuredOutput'
 import { SecurityCheckSchema } from '../../types/schemas'
 import { getLangfuseCallbackHandler, flushLangfuse } from '../../helpers/langfuse'
 import { setCurrentSessionId } from './helpers/runContext'
+import { setResolvedModelListener } from './helpers/resolvedModel'
 import { buildSubagentConfigs } from './SubagentConfig'
 import { resolveHarnessProfile, applyHarnessToolRules } from './harnessProfiles'
 import { StreamEventHandler } from './StreamEventHandler'
@@ -75,6 +76,8 @@ export class DeepAgentInferencer implements ICompletions, IGeneration {
   private allowedModels: string[] = []
   private sessionThreadId: string = DeepAgentInferencer.generateThreadId()
   private streamEventHandler: StreamEventHandler
+  /** Last model reported to the UI; `auto` can change it between requests. */
+  private lastReportedModel: string | null = null
   private userApiKeys?: IUserApiKeyConfig
   // Conversation history to seed into the agent on the next answer() call.
   // Used after a cancel-and-reinitialize so the brand-new LangGraph thread
@@ -177,6 +180,14 @@ export class DeepAgentInferencer implements ICompletions, IGeneration {
     this.event = new EventEmitter()
     this.fallbackInferencer = fallbackInferencer
     this.streamEventHandler = new StreamEventHandler(this.event, () => this.sessionThreadId)
+
+    // The OpenRouter transport reports the model that actually served each
+    // request — the only way to know what `auto` picked.
+    setResolvedModelListener(model => {
+      if (model === this.lastReportedModel) return
+      this.lastReportedModel = model
+      this.event.emit('onModelUsed', { model, threadId: this.sessionThreadId })
+    })
 
     // The model selection MUST come from the caller (resolved from
     // /permissions \u2014 either the user's pick or assistantState.getDefaultModel()).
@@ -613,6 +624,7 @@ export class DeepAgentInferencer implements ICompletions, IGeneration {
     try {
       // Reset stream event handler for new request
       this.streamEventHandler.reset()
+      this.lastReportedModel = null
       this.streamEventHandler.startInactivityTracking()
 
       // https://docs.langchain.com/oss/python/deepagents/streaming
