@@ -32,6 +32,8 @@ export class StreamEventHandler {
   private isIntermediatePhase = true
   private inThinking = false
   private pendingTurnSeparator = false
+  /** Model the provider actually served this run — `auto` resolves per request. */
+  private resolvedModel: string | null = null
   private hasEmittedVisibleContent = false
   private tokenUsage: TokenUsageState = {
     totalInputTokens: 0,
@@ -95,6 +97,7 @@ export class StreamEventHandler {
     this.inThinking = false
     this.pendingTurnSeparator = false
     this.hasEmittedVisibleContent = false
+    this.resolvedModel = null
     this.tokenUsage = {
       totalInputTokens: 0,
       totalOutputTokens: 0,
@@ -119,6 +122,10 @@ export class StreamEventHandler {
 
     if (is_subagent) {
       remixAILogger.log(`[StreamEventHandler] Stream event from subagent detected: ${eventType} (agent: ${agent_name})`, event)
+    }
+
+    if (!is_subagent && (eventType === 'on_chat_model_stream' || eventType === 'on_chat_model_end')) {
+      this.noteResolvedModel(event)
     }
 
     switch (eventType) {
@@ -153,6 +160,21 @@ export class StreamEventHandler {
     default:
       return { content: '' }
     }
+  }
+
+  private noteResolvedModel(event: any): void {
+    const payload = event?.data?.chunk ?? event?.data?.output
+    const metadata =
+      payload?.response_metadata ??
+      payload?.kwargs?.response_metadata ??
+      payload?.lc_kwargs?.response_metadata
+
+    const model = metadata?.model_name || metadata?.model
+    if (!model || typeof model !== 'string' || model === this.resolvedModel) return
+
+    this.resolvedModel = model
+    remixAILogger.log('[StreamEventHandler] Model serving this run:', model)
+    this.event.emit('onModelUsed', { model, threadId: this.getThreadId() })
   }
 
   private handleChainStart(event: any, is_subagent: boolean, agent_name: string): string {

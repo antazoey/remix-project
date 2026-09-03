@@ -24,6 +24,12 @@ export interface ThinkingData {
   threadId?: string
 }
 
+// Model that actually served a run — with `auto` it is picked per request
+export interface ModelUsedData {
+  model: string
+  threadId?: string
+}
+
 // Tool call event data
 export interface ToolCallData {
   toolName: string
