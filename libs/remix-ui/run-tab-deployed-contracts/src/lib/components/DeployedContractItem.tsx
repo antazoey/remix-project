@@ -391,11 +391,8 @@ export function DeployedContractItem({ contract, index, registerRef, isKebabMenu
       }
 
       // Permission gate: non-beta users see the QuickDapp lock screen
-      if (!hasQuickdappAccess) {
-        await plugin.call('manager', 'activatePlugin', 'quick-dapp-v2')
-        await plugin.call('tabs' as any, 'focus', 'quick-dapp-v2')
-        return
-      }
+      await plugin.call('manager', 'activatePlugin', 'quick-dapp-v2')
+      await plugin.call('tabs' as any, 'focus', 'quick-dapp-v2')
 
       console.log('[QuickDapp] handleCreateDapp START', { name: contract.name, address: contract.address, timestamp: Date.now() });
 
