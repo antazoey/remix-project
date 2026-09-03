@@ -267,6 +267,10 @@ export const Preload = (props: PreloadProps) => {
       return
     }
 
+    // Started here rather than in loadAppComponent so the redirect checks below
+    // resolve against the right API; the call is deduped.
+    initEndpoints()
+
     // A user who confirmed the move is sent on before anything else loads.
     // Reads localStorage only, so everyone else pays nothing for it.
     if (redirectConfirmedVisitor(trackConfirmedRedirect)) return

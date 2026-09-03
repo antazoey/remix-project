@@ -13,7 +13,7 @@
  * migration flow instead.
  */
 
-import { endpointUrls } from '@remix-endpoints-helper'
+import { endpointUrls, initEndpoints } from '@remix-endpoints-helper'
 
 /** Set by preload for the current page load; not persisted, it is per-boot. */
 const FRESH_FLAG = '__remixVisitIsFresh'
@@ -203,6 +203,11 @@ export function redirectFreshVisitor(
  * plugin, which only starts once the IDE is already booting.
  */
 export async function fetchRedirectConfig(timeoutMs = 1200): Promise<RedirectConfig | null> {
+  // Endpoint URLs come from /.well-known/remix-config, which staging and
+  // preview builds point elsewhere. Both callers run before the IDE boots, so
+  // without this they would read production config.
+  await initEndpoints()
+
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
