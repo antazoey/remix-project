@@ -160,6 +160,54 @@ function markRedirected(toDomain: string): void {
   }
 }
 
+// ─── Settled on the new domain ───────────────────────────────────
+
+/**
+ * Records that this browser belongs on the new domain from now on. Written
+ * either by an explicit confirmation after migrating, or by the fresh-visitor
+ * redirect below — a visitor with no projects here has nothing to come back
+ * for, so both cases behave the same afterwards.
+ *
+ * Lives here rather than alongside the confirmation flow so that flow can
+ * import it without a cycle.
+ */
+const COMPLETION_KEY = 'remix:migration-completed'
+
+export interface MigrationCompletion {
+  /** Host this browser was migrated to. */
+  toDomain: string
+  /** ISO timestamp. */
+  at: string
+}
+
+export function readMigrationCompletion(): MigrationCompletion | null {
+  try {
+    const raw = localStorage.getItem(COMPLETION_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    const toDomain = normalizeDomain(parsed?.toDomain)
+    return toDomain ? { toDomain, at: String(parsed?.at || '') } : null
+  } catch {
+    return null
+  }
+}
+
+export function writeMigrationCompletion(toDomain: string): void {
+  try {
+    localStorage.setItem(COMPLETION_KEY, JSON.stringify({ toDomain, at: new Date().toISOString() }))
+  } catch {
+    // storage blocked — the visitor is simply re-evaluated next time
+  }
+}
+
+export function clearMigrationCompletion(): void {
+  try {
+    localStorage.removeItem(COMPLETION_KEY)
+  } catch {
+    // nothing to undo
+  }
+}
+
 // ─── Decision ────────────────────────────────────────────────────
 
 export function shouldRedirect(config: RedirectConfig, host: string = window.location.host): boolean {
@@ -193,6 +241,9 @@ export function redirectFreshVisitor(
   if (hasAlreadyRedirected(config.toDomain)) return false
 
   markRedirected(config.toDomain)
+  // Nothing was ever created on this origin, so there is no reason to send
+  // them back here again on a later visit.
+  writeMigrationCompletion(config.toDomain)
   onRedirect?.(config.toDomain)
   window.location.replace(redirectTarget(config.toDomain))
   return true

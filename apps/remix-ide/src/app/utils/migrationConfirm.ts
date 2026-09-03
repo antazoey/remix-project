@@ -14,18 +14,15 @@ import {
   fetchRedirectConfig,
   isRedirectOptedOut,
   normalizeDomain,
-  redirectTarget
+  readMigrationCompletion,
+  redirectTarget,
+  writeMigrationCompletion
 } from './freshUserRedirect'
 
-const COMPLETION_KEY = 'remix:migration-completed'
-const CONFIRM_PARAM = 'migrated'
+export { clearMigrationCompletion, readMigrationCompletion } from './freshUserRedirect'
+export type { MigrationCompletion } from './freshUserRedirect'
 
-export interface MigrationCompletion {
-  /** Host this browser was migrated to. */
-  toDomain: string
-  /** ISO timestamp of the confirmation. */
-  at: string
-}
+const CONFIRM_PARAM = 'migrated'
 
 /** True when this load is the "I'm done" link coming back from the new domain. */
 export function isConfirmingMigration(
@@ -39,34 +36,6 @@ export function isConfirmingMigration(
     )
   } catch {
     return false
-  }
-}
-
-export function readMigrationCompletion(): MigrationCompletion | null {
-  try {
-    const raw = localStorage.getItem(COMPLETION_KEY)
-    if (!raw) return null
-    const parsed = JSON.parse(raw)
-    const toDomain = normalizeDomain(parsed?.toDomain)
-    return toDomain ? { toDomain, at: String(parsed?.at || '') } : null
-  } catch {
-    return null
-  }
-}
-
-function writeMigrationCompletion(toDomain: string): void {
-  try {
-    localStorage.setItem(COMPLETION_KEY, JSON.stringify({ toDomain, at: new Date().toISOString() }))
-  } catch {
-    // storage blocked — the user simply won't be redirected next time
-  }
-}
-
-export function clearMigrationCompletion(): void {
-  try {
-    localStorage.removeItem(COMPLETION_KEY)
-  } catch {
-    // nothing to undo
   }
 }
 
