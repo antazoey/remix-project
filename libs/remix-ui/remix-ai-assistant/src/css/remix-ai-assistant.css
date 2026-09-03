@@ -1547,7 +1547,7 @@ body.light .message-copy-btn:hover {
    rounded box shows.
    -------------------------------------------------------- */
 
-.rai-run-model-row {
+.rai-panel-strip {
   background: var(--bs-body-bg);
   flex-shrink: 0;
 }
