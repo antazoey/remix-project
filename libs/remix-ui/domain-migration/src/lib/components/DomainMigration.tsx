@@ -250,8 +250,8 @@ export const DomainMigration: React.FC<DomainMigrationProps> = ({ targetOrigin, 
               )}
 
               <div style={{ fontSize: 12.5, color: c.tm, lineHeight: 1.6, margin: '14px 0' }}>
-                The button below opens <strong style={{ color: c.cy, fontFamily: mono }}>{destination}</strong> in a new
-                tab and jumps straight to the import step. You&apos;ll be asked for the file you just saved.
+                The button below takes you to <strong style={{ color: c.cy, fontFamily: mono }}>{destination}</strong>{' '}
+                and jumps straight to the import step. You&apos;ll be asked for the file you just saved.
               </div>
 
               {handoffUrl ? (
@@ -266,7 +266,8 @@ export const DomainMigration: React.FC<DomainMigrationProps> = ({ targetOrigin, 
                     </GhostButton>
                   </div>
                   <Note color={c.am} icon="fas fa-lightbulb">
-                    Keep this tab open until the import has finished, in case you need to export again.
+                    Your archive is saved on disk, so it&apos;s safe to leave this page. You can come back any time to
+                    export again.
                   </Note>
                 </>
               ) : (
@@ -429,8 +430,8 @@ export const DomainMigration: React.FC<DomainMigrationProps> = ({ targetOrigin, 
                     <>
                       <div style={{ fontSize: 12.5, color: c.tm, lineHeight: 1.6, margin: '14px 0 12px' }}>
                         <strong style={{ color: c.tx }}>One last step.</strong> Tell {sourceHost} you&apos;ve moved, and
-                        it will bring you straight here from now on instead of loading the old Remix. Opens in a new
-                        tab — nothing there is deleted.
+                        it will bring you straight here from now on instead of loading the old Remix. It sends you
+                        right back here — nothing there is deleted.
                       </div>
                       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                         <PrimaryButton href={confirmUrl} dataId="domainMigrationConfirmLink">
@@ -718,7 +719,7 @@ const PrimaryButton: React.FC<{
   }
   if (href) {
     return (
-      <a href={href} target="_blank" rel="noopener noreferrer" data-id={dataId} style={style} {...handlers}>
+      <a href={href} data-id={dataId} style={style} {...handlers}>
         {children}
       </a>
     )
