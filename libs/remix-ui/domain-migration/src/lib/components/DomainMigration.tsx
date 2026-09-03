@@ -9,6 +9,8 @@ export interface DomainMigrationProps {
   plugin?: any
   /** Host users are being moved to, e.g. 'app.remix.live'. */
   targetOrigin?: string
+  /** Hosts the move is coming from, used to vet an archive's stated origin. */
+  fromDomains?: string[]
   /** ISO date the old origin stops being updated. */
   deadline?: string | null
   /** 'import' when arriving on the new domain via the handoff link. */
@@ -63,7 +65,7 @@ function daysUntil(iso: string | null | undefined): number | null {
   return Math.max(0, Math.floor((t - Date.now()) / 86400000))
 }
 
-export const DomainMigration: React.FC<DomainMigrationProps> = ({ targetOrigin, deadline, initialMode }) => {
+export const DomainMigration: React.FC<DomainMigrationProps> = ({ targetOrigin, fromDomains, deadline, initialMode }) => {
   const [stage, setStage] = useState<Stage>(initialMode === 'import' ? 'import' : 'export')
   const [storage, setStorage] = useState<StorageEstimate | null>(null)
   const [preview, setPreview] = useState<MigrationPreview | null>(null)
@@ -85,15 +87,22 @@ export const DomainMigration: React.FC<DomainMigrationProps> = ({ targetOrigin, 
   // Link back to the origin the archive came from, so it can record the move
   // and redirect on later visits. Carries no destination: that origin resolves
   // it from config, so a crafted link can't point Remix somewhere else.
+  //
+  // The manifest is a user-supplied file, so its stated origin is only trusted
+  // when it is one of the configured migration origins — otherwise a crafted
+  // archive could get Remix to present an attacker's domain as the next step.
   const sourceHost = useMemo(() => {
     if (!archive?.manifest?.sourceOrigin) return null
     try {
       const url = new URL(archive.manifest.sourceOrigin)
-      return url.host && url.host !== window.location.host ? url.host : null
+      const host = url.host.toLowerCase()
+      if (!host || host === window.location.host.toLowerCase()) return null
+      if (!url.protocol.startsWith('http')) return null
+      return (fromDomains || []).includes(host) ? host : null
     } catch {
       return null
     }
-  }, [archive])
+  }, [archive, fromDomains])
   const confirmUrl = sourceHost ? `${archive!.manifest.sourceOrigin.replace(/\/$/, '')}/#migrated` : null
 
   useEffect(() => {
@@ -150,8 +159,7 @@ export const DomainMigration: React.FC<DomainMigrationProps> = ({ targetOrigin, 
         setImportResult(await importArchive(archive, { resume }, setProgress))
         setCanResume(false)
         // Survives the reload below, so the confirmation step stays reachable.
-        const origin = archive.manifest.sourceOrigin
-        if (origin && new URL(origin).host !== window.location.host) setPendingConfirmation(origin)
+        if (sourceHost) setPendingConfirmation(archive.manifest.sourceOrigin)
       } catch (e: any) {
         setError(e?.message || String(e))
         setCanResume(!!readResumeState(archive.archiveId))
@@ -160,7 +168,7 @@ export const DomainMigration: React.FC<DomainMigrationProps> = ({ targetOrigin, 
         setProgress(null)
       }
     },
-    [archive]
+    [archive, sourceHost]
   )
 
   const copyHandoff = () => {

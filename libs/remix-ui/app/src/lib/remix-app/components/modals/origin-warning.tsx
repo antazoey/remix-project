@@ -44,11 +44,13 @@ export const OriginWarning = () => {
     if (isMigrationDoneReturn()) clearPendingConfirmation()
 
     // Someone who imported and then reloaded would otherwise lose the
-    // confirmation link along with the wizard's state.
+    // confirmation link along with the wizard's state. The stored origin came
+    // from a user-supplied archive, so it is only trusted while it matches a
+    // configured migration origin.
     const pending = readPendingConfirmation()
     if (pending) {
       const pendingHost = normalizeDomain(pending)
-      if (pendingHost && pendingHost !== host) {
+      if (pendingHost && pendingHost !== host && migration.fromDomains.includes(pendingHost)) {
         setBanner({
           id: 'migration-confirm',
           variant: 'migration',
