@@ -202,7 +202,7 @@ export function redirectFreshVisitor(
  * Public config endpoint, fetched directly rather than through the auth
  * plugin, which only starts once the IDE is already booting.
  */
-async function fetchRedirectConfig(timeoutMs = 1200): Promise<RedirectConfig | null> {
+export async function fetchRedirectConfig(timeoutMs = 1200): Promise<RedirectConfig | null> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {

@@ -173,8 +173,8 @@ export async function fetchRemixConfig(baseUrl: string): Promise<RemixConfig> {
  * consumers see the updated values immediately.
  */
 export function updateEndpoints(config: RemixConfig): void {
-  const base = 'https://api.remix.live'; // fallback
-  //const base = config.baseUrl.replace(/\/$/, '');
+  //const base = 'https://api.remix.live'; // fallback
+  const base = config.baseUrl.replace(/\/$/, '');
 
   // Map discovery keys back to EndpointUrls keys
   for (const [key, path] of Object.entries(config.services)) {
