@@ -104,8 +104,8 @@ export async function exportArchive(target: SaveTarget, onProgress: ProgressCall
       'files/       your workspaces, byte for byte\n' +
       'settings.json  your Remix preferences (no credentials)\n' +
       'manifest.json  file list with a SHA-256 per file\n\n' +
-      'Import it with "Move your projects" in the workspace menu.\n' +
-      'Keep this file until you have confirmed your projects opened correctly.\n'
+      'Import it with "Move your workspaces" in the workspace menu.\n' +
+      'Keep this file until you have confirmed your workspaces opened correctly.\n'
   )
 
   const fileName = suggestedFileName()

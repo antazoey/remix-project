@@ -205,7 +205,7 @@ const Step: React.FC<{ n: number; title: string; body: string; color: string; ti
 
 /**
  * Announces that the current origin is being retired and walks the user
- * through moving their projects.
+ * through moving their workspaces.
  *
  * Deliberately reassuring rather than alarmist: files are never deleted by
  * this flow, and the copy says so, because the failure mode we care about is
@@ -305,7 +305,7 @@ const DomainMigrationModal: React.FC<DomainMigrationModalProps> = ({
               fontSize: 18, fontWeight: 600, color: c.tx,
               marginBottom: 10, lineHeight: 1.3
             }}>
-              Bring your projects to {toDomain}
+              Bring your workspaces to {toDomain}
             </div>
 
             {/* Domain hop */}
@@ -356,7 +356,7 @@ const DomainMigrationModal: React.FC<DomainMigrationModalProps> = ({
             <div style={{ fontSize: 13, color: c.tm, lineHeight: 1.55 }}>
               Your workspaces are stored by your browser and tied to{' '}
               <strong style={{ color: c.tx, fontWeight: 600 }}>{from}</strong>. Browsers keep that storage separate per
-              domain, so your projects will not appear on the new address by themselves — you need to move them once.
+              domain, so your workspaces will not appear on the new address by themselves — you need to move them once.
             </div>
           </div>
 
@@ -392,7 +392,7 @@ const DomainMigrationModal: React.FC<DomainMigrationModalProps> = ({
               </svg>
               <div style={{ fontSize: 11.5, color: c.tm, lineHeight: 1.4 }}>
                 Nothing is deleted here. The archive is a <strong style={{ color: c.tx, fontWeight: 600 }}>copy</strong>,
-                and your projects stay on this domain until you remove them yourself.
+                and your workspaces stay on this domain until you remove them yourself.
               </div>
             </div>
           </div>
@@ -404,7 +404,7 @@ const DomainMigrationModal: React.FC<DomainMigrationModalProps> = ({
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M8 2v8M5 7l3 3 3-3M2.5 12.5h11" />
                 </svg>
-                Move my projects
+                Move my workspaces
               </PrimaryButton>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
@@ -427,7 +427,7 @@ const DomainMigrationModal: React.FC<DomainMigrationModalProps> = ({
             display: 'flex', alignItems: 'center', justifyContent: 'center'
           }}>
             <div style={{ fontSize: 12, color: c.td, textAlign: 'center' }}>
-              You can start this any time from the workspace menu → <strong style={{ color: c.tm }}>Move your projects</strong>
+              You can start this any time from the workspace menu → <strong style={{ color: c.tm }}>Move your workspaces</strong>
             </div>
           </div>
         </div>

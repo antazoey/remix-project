@@ -112,7 +112,7 @@ export function urlWithoutHandoff(href: string = window.location.href): string {
 /**
  * Set on the destination once an import succeeds, and cleared when the user
  * comes back from confirming. Without it, reloading to see the imported
- * projects would drop the confirmation link and there would be no way back
+ * workspaces would drop the confirmation link and there would be no way back
  * to it.
  */
 const PENDING_CONFIRM_KEY = 'remix:migration-pending-confirm'

@@ -20,7 +20,7 @@ export interface DomainMigrationProps {
 type Stage = 'export' | 'handoff' | 'import'
 
 const STEPS: { id: Stage; label: string; hint: string }[] = [
-  { id: 'export', label: 'Export', hint: 'Pack your projects' },
+  { id: 'export', label: 'Export', hint: 'Pack your workspaces' },
   { id: 'handoff', label: 'Move over', hint: 'Open the new site' },
   { id: 'import', label: 'Import', hint: 'Restore them there' }
 ]
@@ -197,7 +197,7 @@ export const DomainMigration: React.FC<DomainMigrationProps> = ({ targetOrigin, 
         <div style={{ animation: 'dmwIn 0.3s ease' }}>
           {stage === 'export' && (
             <Card accent={c.cy} data-id="domainMigrationExport">
-              <CardTitle step={1} accent={c.cy}>Pack your projects into one file</CardTitle>
+              <CardTitle step={1} accent={c.cy}>Pack your workspaces into one file</CardTitle>
 
               {preview ? (
                 <>
@@ -220,13 +220,13 @@ export const DomainMigration: React.FC<DomainMigrationProps> = ({ targetOrigin, 
                   )}
                 </>
               ) : (
-                <div style={{ fontSize: 12.5, color: c.tm, marginBottom: 14 }}>Looking at your projects…</div>
+                <div style={{ fontSize: 12.5, color: c.tm, marginBottom: 14 }}>Looking at your workspaces…</div>
               )}
 
               <div style={{ marginTop: 16 }}>
                 <PrimaryButton onClick={onExport} disabled={busy} dataId="domainMigrationExportBtn">
                   <i className="fas fa-box-archive" />
-                  {busy ? 'Exporting…' : 'Export my projects'}
+                  {busy ? 'Exporting…' : 'Export my workspaces'}
                 </PrimaryButton>
               </div>
               <div style={{ fontSize: 11.5, color: c.td, marginTop: 10, lineHeight: 1.5 }}>
@@ -285,7 +285,7 @@ export const DomainMigration: React.FC<DomainMigrationProps> = ({ targetOrigin, 
 
           {stage === 'import' && (
             <Card accent={c.gn} data-id="domainMigrationImport">
-              <CardTitle step={3} accent={c.gn}>Restore your projects here</CardTitle>
+              <CardTitle step={3} accent={c.gn}>Restore your workspaces here</CardTitle>
 
               {!archive && !importResult && (
                 <div
@@ -439,14 +439,14 @@ export const DomainMigration: React.FC<DomainMigrationProps> = ({ targetOrigin, 
                           Finish up on {sourceHost}
                         </PrimaryButton>
                         <GhostButton onClick={() => window.location.reload()} dataId="domainMigrationReload">
-                          <i className="fas fa-rotate-right" /> Reload to see my projects
+                          <i className="fas fa-rotate-right" /> Reload to see my workspaces
                         </GhostButton>
                       </div>
                     </>
                   ) : (
                     <div style={{ marginTop: 14 }}>
                       <PrimaryButton onClick={() => window.location.reload()} dataId="domainMigrationReload">
-                        <i className="fas fa-rotate-right" /> Reload Remix to see your projects
+                        <i className="fas fa-rotate-right" /> Reload Remix to see your workspaces
                       </PrimaryButton>
                     </div>
                   )}

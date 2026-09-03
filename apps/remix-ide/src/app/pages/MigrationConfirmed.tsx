@@ -118,7 +118,7 @@ const Confirmed: React.FC<{ toDomain: string }> = ({ toDomain }) => (
       kicker="Migration complete"
     />
     <p style={{ fontSize: 13, color: c.tm, lineHeight: 1.6, margin: '0 0 18px' }}>
-      Remix will now take you to <Domain>{toDomain}</Domain> whenever you open this address. Your old projects are still
+      Remix will now take you to <Domain>{toDomain}</Domain> whenever you open this address. Your old workspaces are still
       here, untouched, in case you ever need them.
     </p>
 
@@ -142,7 +142,7 @@ const Unavailable: React.FC<{ retrying: boolean; onRetry: () => void }> = ({ ret
       kicker="Try again"
     />
     <p style={{ fontSize: 13, color: c.tm, lineHeight: 1.6, margin: '0 0 18px' }}>
-      We couldn&apos;t reach Remix to complete this, so nothing has been saved. Your projects on the new site are fine —
+      We couldn&apos;t reach Remix to complete this, so nothing has been saved. Your workspaces on the new site are fine —
       this step only stops this old address from loading in future. It&apos;s usually a temporary connection problem.
     </p>
     <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>

@@ -591,7 +591,7 @@ export const WorkspacesDropdown: React.FC<WorkspacesDropdownProps> = ({ menuItem
                 data-id="workspaceOpenDomainMigration"
               >
                 <i className="fas fa-truck-fast text-body-secondary fws-action-icon" />
-                <span>Move your projects</span>
+                <span>Move your workspaces</span>
               </button>
               <div className="dropdown-divider my-1" />
               <button

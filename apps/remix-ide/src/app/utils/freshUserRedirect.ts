@@ -9,7 +9,7 @@
  * result is cached in localStorage. If that request is slow or fails, the auth
  * plugin still redirects the moment the config lands.
  *
- * Nothing here touches users who already have projects — they get the normal
+ * Nothing here touches users who already have workspaces — they get the normal
  * migration flow instead.
  */
 
@@ -164,7 +164,7 @@ function markRedirected(toDomain: string): void {
 /**
  * Records that this browser belongs on the new domain from now on. Written
  * either by an explicit confirmation after migrating, or by the fresh-visitor
- * redirect below — a visitor with no projects here has nothing to come back
+ * redirect below — a visitor with no workspaces here has nothing to come back
  * for, so both cases behave the same afterwards.
  *
  * Lives here rather than alongside the confirmation flow so that flow can

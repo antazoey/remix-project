@@ -7,7 +7,7 @@ import { RemixAppManager } from '../../remixAppManager'
 
 const profile = {
   name: 'domainMigration',
-  displayName: 'Move your projects',
+  displayName: 'Move your workspaces',
   description: 'Export and import your workspaces and settings when moving between Remix domains',
   location: 'mainPanel',
   methods: ['showMigration'],
