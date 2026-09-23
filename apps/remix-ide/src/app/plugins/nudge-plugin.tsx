@@ -5,6 +5,7 @@ import { NudgeEngine, all, any } from '@remix-project/remix-lib'
 import { PRO_DEMOS } from '@remix-ui/modal-help'
 import { isMigrationHandoff, isMigrationPromptSnoozed, parseMigrationConfig, shouldPromptMigration } from '@remix-ui/domain-migration'
 import type { NudgeRule, NudgeAction, SerializedNudgeRule } from '@remix-project/remix-lib'
+import type { BillingLocale } from '@remix-ui/plan-manager'
 import { trackMatomoEvent as baseTrackMatomoEvent, NudgeEvent, MatomoEvent, Features, PendingCheckout } from '@remix-api'
 import * as packageJson from '../../../../../package.json'
 import './nudge-widget.css'
@@ -19,6 +20,15 @@ const MCP_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fil
 const CLAUDE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" fill="currentColor"><path d="M164.4 404.5L265.1 348L266.8 343.1L265.1 340.4L260.2 340.4L243.4 339.4L185.9 337.8L136 335.7L87.7 333.1L75.5 330.5L64.1 315.5L65.3 308L75.5 301.1L90.2 302.4C109.1 303.7 136.1 305.5 171.2 308L206.4 310.1L258.6 315.5L266.9 315.5L268.1 312.1L265.3 310L263.1 307.9L212.8 273.8L158.4 237.8L129.9 217.1L114.5 206.6L106.7 196.8L103.3 175.3L117.3 159.9L136.1 161.2L140.9 162.5L159.9 177.2L200.6 208.7L253.7 247.8L261.5 254.3L264.6 252.1L265 250.5L261.5 244.7L232.6 192.5L201.8 139.4L188.1 117.4L184.5 104.2C183.2 98.8 182.3 94.2 182.3 88.7L198.2 67.1L207 64.3L228.2 67.1L237.1 74.9L250.3 105.1L271.7 152.6L304.9 217.2L314.6 236.4L319.8 254.2L321.7 259.6L325.1 259.6L325.1 256.5L327.8 220.1L332.8 175.4L337.7 117.9L339.4 101.7L347.4 82.3L363.3 71.8L375.7 77.7L385.9 92.4L384.5 101.9L378.4 141.4L366.5 203.3L358.7 244.8L363.2 244.8L368.4 239.6L389.4 211.8L424.6 167.7L440.1 150.2L458.2 130.9L469.8 121.7L491.8 121.7L508 145.8L500.7 170.7L478 199.4L459.2 223.8L432.2 260.1L415.4 289.1L417 291.4L421 291L481.9 278L514.8 272.1L554.1 265.4L571.9 273.7L573.8 282.1L566.8 299.3L524.8 309.7L475.6 319.5L402.3 336.8L401.4 337.5L402.4 338.8L435.4 341.9L449.5 342.7L484.1 342.7L548.5 347.5L565.3 358.6L575.4 372.2L573.7 382.6L547.8 395.8C532.3 392.1 493.4 382.9 431.2 368.1L403.2 361.1L399.3 361.1L399.3 363.4L422.6 386.2L465.3 424.8L518.8 474.6L521.5 486.9L514.6 496.6L507.3 495.6L460.3 460.2L442.2 444.3L401.1 409.7L398.4 409.7L398.4 413.3L407.9 427.2L457.9 502.4L460.5 525.4L456.9 532.9L443.9 537.4L429.7 534.8L400.4 493.7L370.2 447.4L345.8 405.9L342.8 407.6L328.4 562.4L321.7 570.3L306.2 576.2L293.2 566.4L286.3 550.5L293.2 519L301.5 477.9L308.2 445.2L314.3 404.6L317.9 391.1L317.7 390.2L314.7 390.6L284.1 432.6L237.6 495.5L200.8 534.9L192 538.4L176.7 530.5L178.1 516.4L186.6 503.8L237.5 439L268.2 398.8L288 375.6L287.9 372.2L286.7 372.2L151.4 460L127.3 463.1L116.9 453.4L118.2 437.5L123.1 432.3L163.8 404.3L163.7 404.4L163.7 404.5z"/></svg>`
 
 /* ─── Helpers ─── */
+
+/**
+ * Countries we run regional pricing for. Paddle prices in the local currency,
+ * so the nudge can quote a real local amount instead of the USD list price.
+ */
+const REGIONAL_PRICING_COUNTRIES: Record<string, string> = {
+  NG: 'Nigeria',
+  IN: 'India'
+}
 
 /**
  * Resolve whether a feature is enabled in an `auth.getAllPermissions()`
@@ -87,6 +97,9 @@ export class NudgePlugin extends Plugin {
   // After a successful upgrade, the help guide to open once the plan-manager
   // panel closes (so it doesn't fight the still-open checkout panel).
   private _pendingPlanGuide: string | null = null
+  // Last billing locale turned into engine facts — the plan manager replays a
+  // cached locale on activation and again once a live preview lands.
+  private _billingLocaleSignature = ''
 
   // Type-safe tracker defaulting to NudgeEvent
   private trackMatomoEvent = <T extends MatomoEvent = NudgeEvent>(event: T) => {
@@ -263,6 +276,12 @@ export class NudgePlugin extends Plugin {
       } else {
         this.engine_.unfire('user:unfinished_checkout')
       }
+    })
+
+    // Visitor's billing country, resolved by Paddle's price preview (replayed
+    // from cache on activation, refreshed once a live preview lands).
+    this.on('planManager' as any, 'billingLocaleResolved', (locale: BillingLocale) => {
+      this._applyBillingLocale(locale)
     })
 
     // Plan purchased — user is no longer on free plan, retire the upgrade nudge
@@ -579,11 +598,58 @@ export class NudgePlugin extends Plugin {
   }
 
   /**
+   * Turn the resolved billing country into engine facts: a generic
+   * `user:country_<cc>` event any rule can target, plus a regional-pricing
+   * nudge (with the real local price when Paddle gave us one) for the
+   * countries we run local rates in.
+   */
+  private _applyBillingLocale(locale: BillingLocale | null | undefined): void {
+    const countryCode = locale?.countryCode?.toUpperCase()
+    if (!locale || !countryCode) return
+
+    const signature = `${countryCode}|${locale.currencyCode}|${locale.lowestPlanPrice ?? ''}|${locale.lowestPlanIsIntroOffer}`
+    if (signature === this._billingLocaleSignature) return
+    this._billingLocaleSignature = signature
+    this.log('[NudgePlugin] billing locale', locale)
+
+    const country = REGIONAL_PRICING_COUNTRIES[countryCode]
+    if (country) {
+      const billedIn = locale.currencyCode && locale.currencyCode !== 'USD'
+        ? `, billed in ${locale.currencyCode}`
+        : ''
+      const message = locale.lowestPlanPrice
+        ? locale.lowestPlanIsIntroOffer
+          ? `Paid plans start at ${locale.lowestPlanPrice}/month with the current launch offer${billedIn}.`
+          : `Paid plans start at ${locale.lowestPlanPrice}/month in ${country}${billedIn}.`
+        : `We now have rates tailored to ${country} — see what your plan costs here.`
+      this.engine_.addRule({
+        id: 'regional-pricing-offer',
+        condition: `user:country_${countryCode.toLowerCase()}`,
+        action: {
+          type: 'modal',
+          position: 'right',
+          title: `Special rates for ${country}`,
+          message,
+          actionLabel: 'See Plans',
+          actionTarget: 'planManager::open::plans',
+          icon: 'fas fa-tags',
+          widgetColor: '#2fbfb1',
+          widgetBg: 'rgba(47, 191, 177, 0.1)'
+        },
+        showOnce: 'session',
+        priority: 14
+      })
+    }
+
+    // Fire last so the rule above is registered before the engine evaluates.
+    this.engine_.fire(`user:country_${countryCode.toLowerCase()}`)
+  }
+
+  /**
    * Auto-open the farewell modal when a beta tester is within the
    * configured threshold of their `expires_at`. Honours per-expiry
    * localStorage dismissal ("Remind me later" timestamp / "never").
-   */
-  private async _maybeShowBetaFarewell(betaGroup: { expires_at?: string | null }): Promise<void> {
+   */  private async _maybeShowBetaFarewell(betaGroup: { expires_at?: string | null }): Promise<void> {
     const expiresAt = betaGroup?.expires_at
     if (!expiresAt) return
     const expiresMs = Date.parse(expiresAt)
