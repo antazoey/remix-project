@@ -56,8 +56,8 @@ const profile = {
   name: 'nudgePlugin',
   displayName: 'Nudge Plugin',
   description: 'Contextual feature discovery widget — surfaces tips, CTAs, and hints based on user context',
-  methods: ['dismiss', 'dismissPermanent', 'addRule', 'addRules', 'fire', 'clearActive'],
-  events: ['nudgeTriggered', 'nudgeDismissed'],
+  methods: ['dismiss', 'dismissPermanent', 'addRule', 'addRules', 'fire', 'clearActive', 'getBanner', 'dismissBanner'],
+  events: ['nudgeTriggered', 'nudgeDismissed', 'nudgeBannerChanged'],
   icon: '',
   location: 'none',
   version: packageJson.version,
@@ -100,6 +100,7 @@ export class NudgePlugin extends Plugin {
   // Last billing locale turned into engine facts — the plan manager replays a
   // cached locale on activation and again once a live preview lands.
   private _billingLocaleSignature = ''
+  private _activeBanner: NudgeRule | null = null
 
   // Type-safe tracker defaulting to NudgeEvent
   private trackMatomoEvent = <T extends MatomoEvent = NudgeEvent>(event: T) => {
@@ -138,6 +139,9 @@ export class NudgePlugin extends Plugin {
         // Announcement-style nudges that open their own rich UI instead of
         // rendering one of the built-in cards.
         this._invokeTarget(rule.action.actionTarget)
+      } else if (rule.action.type === 'banner') {
+        this._activeBanner = rule
+        this.emit('nudgeBannerChanged', rule)
       } else if (rule.action.type === 'hint') {
         this._handleHint(rule)
       } else if (rule.action.type === 'widget' || rule.action.type === 'toast' || rule.action.type === 'modal') {
@@ -468,7 +472,6 @@ export class NudgePlugin extends Plugin {
     }
 
     this.engine_.unfire('user:logged_in')
-    this.engine_.unfire('user:logged_in_beta')
     this.engine_.fire('user:not_logged_in')
   }
 
@@ -479,7 +482,6 @@ export class NudgePlugin extends Plugin {
       const groups = permissions?.feature_groups || []
       const betaGroup = groups.find((g: any) => g.name === 'beta')
       if (betaGroup) {
-        this.engine_.fire('user:logged_in_beta')
         // Surface the farewell modal if their beta is wrapping up.
         // Fire-and-forget — failures (helpPlugin not ready, storage
         // blocked, etc.) shouldn't break the nudge flow.
@@ -626,7 +628,7 @@ export class NudgePlugin extends Plugin {
         id: 'regional-pricing-offer',
         condition: `user:country_${countryCode.toLowerCase()}`,
         action: {
-          type: 'modal',
+          type: 'banner',
           position: 'right',
           title: `Special rates for ${country}`,
           message,
@@ -746,24 +748,6 @@ export class NudgePlugin extends Plugin {
 
     /* ─── Authenticated — contextual feature discovery ─── */
 
-    // Beta welcome — first thing a beta tester sees after logging in
-    this.engine_.addRule({
-      id: 'beta-welcome',
-      condition: 'user:logged_in_beta',
-      action: {
-        type: 'widget',
-        title: 'Welcome to Remix Beta',
-        message: 'You\'ve unlocked premium AI models, MCP Integrations, cloud sync, and QuickDApp. Tap to take a quick tour.',
-        actionLabel: 'Take the Tour',
-        actionTarget: 'helpPlugin::showModal::beta-reel',
-        icon: 'fas fa-sparkles',
-        widgetColor: '#2fbfb1',
-        widgetBg: 'rgba(47, 191, 177, 0.1)'
-      },
-      showOnce: true,
-      priority: 15
-    })
-
     // Premium AI models — triggers when user opens the AI chat
     this.engine_.addRule({
       id: 'try-opus-model',
@@ -798,42 +782,6 @@ export class NudgePlugin extends Plugin {
       },
       showOnce: 'session',
       priority: 9
-    })
-
-    // MCP Tools — triggers when user opens AI chat (they'll likely want on-chain data)
-    this.engine_.addRule({
-      id: 'try-mcp-tools',
-      condition: all('user:logged_in_beta', 'ai:chat_opened'),
-      action: {
-        type: 'widget',
-        title: 'AI with Superpowers',
-        message: 'Your AI assistant connects to Alchemy, Etherscan, The Graph, and more through MCP — ask it to fetch on-chain data or verify contracts directly in chat.',
-        actionLabel: 'Learn More',
-        actionTarget: 'helpPlugin::showModal::mcp',
-        icon: MCP_SVG,
-        widgetColor: '#8b5cf6',
-        widgetBg: 'rgba(139, 92, 246, 0.08)'
-      },
-      showOnce: 'session',
-      priority: 8
-    })
-
-    // QuickDApp — triggers when user deploys a contract successfully
-    this.engine_.addRule({
-      id: 'try-quickdapp',
-      condition: all('user:logged_in_beta', 'contract:deployed'),
-      action: {
-        type: 'widget',
-        title: 'Try QuickDApp',
-        message: 'Your contract is deployed! Generate a ready-to-use frontend dashboard to interact with it — no front-end code needed.',
-        actionLabel: 'Learn More',
-        actionTarget: 'helpPlugin::showModal::quickdapp',
-        icon: 'fas fa-rocket',
-        widgetColor: '#e67e22',
-        widgetBg: 'rgba(230, 126, 34, 0.1)'
-      },
-      showOnce: 'session',
-      priority: 7
     })
 
     // Cloud Workspaces — persistent nudge for local-only users
@@ -1087,7 +1035,22 @@ export class NudgePlugin extends Plugin {
     }, 300)
   }
 
-  /** Clear all active nudges and queue */
+  /** Return the currently active banner nudge (null if none). */
+  getBanner(): NudgeRule | null {
+    return this._activeBanner
+  }
+
+  /** Dismiss the banner nudge — hides it and marks it shown via the engine. */
+  dismissBanner(): void {
+    if (!this._activeBanner) return
+    const id = this._activeBanner.id
+    this._activeBanner = null
+    this.emit('nudgeBannerChanged', null)
+    this.emit('nudgeDismissed', { id, permanent: false })
+    this.trackMatomoEvent({ category: 'nudge', action: 'dismissed', name: id, isClick: true })
+  }
+
+/** Clear all active nudges and queue */
   clearActive(): void {
     this.state = {
       ...this.state,
