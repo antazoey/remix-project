@@ -562,7 +562,7 @@ export class NudgePlugin extends Plugin {
               : `$${(Number(introDiscount.amount) || 0).toFixed(2)} off ${duration}`
             const discountedLabel = `$${(dc / 100).toFixed(2)}`
             const regularLabel = `$${(priceCents / 100).toFixed(2)}`
-            message = `Limited offer: ${offerLabel} — get ${planName} for just ${discountedLabel}/${unit} (regular ${regularLabel}). Premium models, MCP tools, and higher credit quotas included.`
+            message = `Limited offer: ${offerLabel} — get ${planName} for just ${discountedLabel}/${unit} (regular ${regularLabel}). Premium models, MCP tools, security and gas audit and initial credits included.`
             this.log('[NudgePlugin] _checkFreePlanNudge: discount message built', { offerLabel, discountedLabel, regularLabel })
           } else {
             const priceLabel = `$${(priceCents / 100).toFixed(2)}`
@@ -581,7 +581,7 @@ export class NudgePlugin extends Plugin {
         id: 'free-plan-upgrade',
         condition: 'user:on_free_plan',
         action: {
-          type: 'widget',
+          type: 'banner',
           position: 'right',
           hidePermanentDismiss: true,
           title,
@@ -764,9 +764,9 @@ export class NudgePlugin extends Plugin {
     // Premium AI models — triggers when user opens the AI chat
     this.engine_.addRule({
       id: 'try-opus-model',
-      condition: all('user:logged_in_beta', 'ai:chat_opened'),
+      condition: all('user:logged_in', 'ai:chat_opened'),
       action: {
-        type: 'widget',
+        type: 'banner',
         title: 'Try a Premium Model',
         message: 'You have access to Claude Opus — it excels at complex Solidity patterns and audits.',
         actionLabel: 'Learn More',
@@ -782,9 +782,9 @@ export class NudgePlugin extends Plugin {
     // Cloud Workspaces — triggers when user switches workspaces
     this.engine_.addRule({
       id: 'try-cloud-workspaces',
-      condition: all('user:logged_in_beta', 'workspace:switched'),
+      condition: all('user:logged_in', 'workspace:switched'),
       action: {
-        type: 'widget',
+        type: 'banner',
         title: 'Try Cloud Workspaces',
         message: 'Your projects are only stored locally. Enable cloud sync to access them from any device, anytime.',
         actionLabel: 'Learn More',
@@ -800,9 +800,9 @@ export class NudgePlugin extends Plugin {
     // Cloud Workspaces — persistent nudge for local-only users
     this.engine_.addRule({
       id: 'try-cloud-toggle',
-      condition: all('user:logged_in_beta', 'workspace:local_only', 'lifecycle:APP_LOADED'),
+      condition: all('user:logged_in', 'workspace:local_only', 'lifecycle:APP_LOADED'),
       action: {
-        type: 'widget',
+        type: 'banner',
         title: 'Cloud Workspaces',
         message: 'Your projects are only stored locally. Enable cloud sync to access them anywhere.',
         actionLabel: 'Learn More',
@@ -816,9 +816,9 @@ export class NudgePlugin extends Plugin {
     // Solidity-specific hint — when editing a .sol file, suggest the AI for help
     this.engine_.addRule({
       id: 'hint-ai-for-solidity',
-      condition: all('user:logged_in_beta', 'editor:solidity_active'),
+      condition: all('user:logged_in', 'editor:solidity_active'),
       action: {
-        type: 'widget',
+        type: 'banner',
         title: 'RemixAI Knows Solidity',
         message: 'Ask RemixAI to explain, audit, or optimize your contract. It understands your project context through MCP.',
         actionLabel: 'Learn More',
@@ -834,9 +834,9 @@ export class NudgePlugin extends Plugin {
     // Deployment nudge — after deploying a contract, suggest QuickDapp
     this.engine_.addRule({
       id: 'quickdapp-after-deploy',
-      condition: all('user:logged_in_beta', 'contract:deployed'),
+      condition: all('user:logged_in', 'contract:deployed'),
       action: {
-        type: 'widget',
+        type: 'banner',
         title: 'Build a DApp from This',
         message: 'You just deployed a contract — now generate a dApp to get an instant front-end to interact with it.',
         actionLabel: 'Learn More',
@@ -877,7 +877,7 @@ export class NudgePlugin extends Plugin {
       id: 'signup-after-chat',
       condition: all('ai:chat_while_logged_out', 'config:invite_only'),
       action: {
-        type: 'widget',
+        type: 'banner',
         title: 'Unlock Premium AI Models',
         message: 'You\'re using the free tier. Sign up to access Claude Opus, GPT-4, and MCP-powered tools for deeper contract analysis.',
         actionLabel: 'Sign Up Free',
@@ -895,9 +895,9 @@ export class NudgePlugin extends Plugin {
     // After AI generates a workspace, suggest cloud sync
     this.engine_.addRule({
       id: 'cloud-after-ai-workspace',
-      condition: all('user:logged_in_beta', 'ai:workspace_generated'),
+      condition: all('user:logged_in', 'ai:workspace_generated'),
       action: {
-        type: 'widget',
+        type: 'banner',
         title: 'Save This to the Cloud',
         message: 'Your AI-generated workspace is local only. Did you know you can sync it to the cloud and access it from anywhere?',
         actionLabel: 'Learn More',
@@ -913,9 +913,9 @@ export class NudgePlugin extends Plugin {
     // After chatting a few times, hint about code explain shortcut
     this.engine_.addRule({
       id: 'hint-code-explain',
-      condition: all('user:logged_in_beta', 'ai:chat_message', 'editor:solidity_active'),
+      condition: all('user:logged_in', 'ai:chat_message', 'editor:solidity_active'),
       action: {
-        type: 'widget',
+        type: 'banner',
         title: 'Quick Tip: Explain Code',
         message: 'Right-click any code and select "Explain this" — RemixAI will break it down for you instantly.',
         actionLabel: 'Got It',
