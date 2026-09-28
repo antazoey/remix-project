@@ -2694,7 +2694,10 @@ export class PlanManagerPlugin extends ViewPlugin {
       })
       if (gateEnabled && (emailMissing || emailUnverified) && !panelAlreadyOpen) {
         planManagerLogger.log('[PlanManager:email-gate] auto-opening panel → email-unverified')
-        if (Math.random() < 0.60) {
+        // Don't show upgrade modal to Pro users
+        const hasProGroup = permissions?.feature_groups?.some?.((g: any) => g.name === 'pro')
+        const hasProFeature = permissions?.features?.['ai:auditor']?.is_enabled === true
+        if (Math.random() < 0.60 && !hasProGroup && !hasProFeature) {
           this.call('nudgePlugin', 'fire', 'app:time-to-promote-plans')
         }
         // Catalog wasn't loaded as part of this path — fetch it now so the
@@ -2734,7 +2737,10 @@ export class PlanManagerPlugin extends ViewPlugin {
       if (canShowPlans && isFreePlan && !this.freePlanAutoOpenFired && !panelAlreadyOpen) {
         this.freePlanAutoOpenFired = true
         planManagerLogger.log('[PlanManager:free-plan-gate] auto-opening panel → free plan')
-        if (Math.random() < 0.60) {
+        // Don't show upgrade modal to Pro users (even if they appear as free plan due to special access)
+        const hasProGroup = permissions?.feature_groups?.some?.((g: any) => g.name === 'pro')
+        const hasProFeature = permissions?.features?.['ai:auditor']?.is_enabled === true
+        if (Math.random() < 0.60 && !hasProGroup && !hasProFeature) {
           this.call('nudgePlugin', 'fire', 'app:time-to-promote-plans')
         }
         // Catalog wasn't loaded as part of this path — fetch it now so plans

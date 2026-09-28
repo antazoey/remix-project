@@ -511,7 +511,26 @@ export class NudgePlugin extends Plugin {
   private async _checkFreePlanNudge(): Promise<void> {
     this.log('[NudgePlugin] _checkFreePlanNudge: start')
     try {
-      // 1. Does the user already have an active paid subscription?
+      // 1. Check if user has Pro plan (not Starter, not Beta)
+      const permissions = await this.call('auth' as any, 'getAllPermissions').catch(() => null)
+
+      // Check for "pro" feature group
+      const hasProGroup = permissions?.feature_groups?.some?.((g: any) => g.name === 'pro')
+
+      if (hasProGroup) {
+        this.log('[NudgePlugin] _checkFreePlanNudge: user has Pro plan, skipping nudge')
+        return
+      }
+
+      // Check for Pro-specific features (ai:auditor is Pro-only)
+      const hasProFeature = permissions?.features?.['ai:auditor']?.is_enabled === true
+
+      if (hasProFeature) {
+        this.log('[NudgePlugin] _checkFreePlanNudge: user has Pro features, skipping nudge')
+        return
+      }
+
+      // 2. Does the user already have an active paid subscription?
       const billingApi = await this.call('auth' as any, 'getBillingApi')
       this.log('[NudgePlugin] _checkFreePlanNudge: billingApi resolved', billingApi)
       const subResp = await billingApi.getSubscription()
@@ -664,7 +683,7 @@ export class NudgePlugin extends Plugin {
    * Auto-open the farewell modal when a beta tester is within the
    * configured threshold of their `expires_at`. Honours per-expiry
    * localStorage dismissal ("Remind me later" timestamp / "never").
-   */  private async _maybeShowBetaFarewell(betaGroup: { expires_at?: string | null }): Promise<void> {
+   */ private async _maybeShowBetaFarewell(betaGroup: { expires_at?: string | null }): Promise<void> {
     const expiresAt = betaGroup?.expires_at
     if (!expiresAt) return
     const expiresMs = Date.parse(expiresAt)
@@ -1063,7 +1082,7 @@ export class NudgePlugin extends Plugin {
     this.trackMatomoEvent({ category: 'nudge', action: 'dismissed', name: id, isClick: true })
   }
 
-/** Clear all active nudges and queue */
+  /** Clear all active nudges and queue */
   clearActive(): void {
     this.state = {
       ...this.state,
