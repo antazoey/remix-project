@@ -87,7 +87,7 @@ const test = {
       })
       .waitForElementVisible('*[data-id="toggle-history-btn"]')
       .click('*[data-id="toggle-history-btn"]')
-      .assert.containsText('*[data-id="chat-history-sidebar-title"]', 'Chat history')
+      .assert.containsText('*[data-id="chat-history-sidebar-title"]', 'Chat History')
       .assert.containsText('*[data-id="no-conversations-msg"]', 'No conversations yet')
   },
 
@@ -332,7 +332,7 @@ const test = {
       .pause(500)
       .waitForElementVisible('*[data-id="chat-history-sidebar-maximized"]', 500)
       .assert.visible('*[data-id="floating-chat-heading"]')
-      .assert.containsText('*[data-id="floating-chat-heading"]', 'Chat history')
+      .assert.containsText('*[data-id="floating-chat-heading"]', 'Chat History')
   },
 
   'Should seed many conversations into IndexedDB for scroll test #group2': function (browser: NightwatchBrowser) {

@@ -115,7 +115,7 @@ export const ChatHistorySidebar: React.FC<ChatHistorySidebarProps> = ({
 
         <div className="d-flex justify-content-between align-items-center mb-2">
           <h6 className="mb-0 fw-normal sidebar-title" data-id="chat-history-sidebar-title">
-            {'Chat history'} <span className="ms-2 text-muted">{filteredConversations.length}</span>
+            {'Chat History'} <span className="ms-2 text-muted">{filteredConversations.length}</span>
           </h6>
           <div className="d-flex gap-2">
             <button
